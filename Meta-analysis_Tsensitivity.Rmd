@@ -3,18 +3,1075 @@ title: "Microbial biomass controls over the temperature sensitivity of soil resp
 author: "Petr Capek, Robert Starke, Kirsten Hofmockel, Ben Bond-Lamberty, Nancy Hess"
 date: "`r Sys.Date()`"
 output:
-  html_document: 
   
-    toc: true
-    toc_depth: 3
-    toc_float: 
-      collapsed: false
-      smooth_scroll: false
+  html_document: 
     theme: readable
     highlight: tango
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+##Data meta-analysis
+
+To analyze data, several libraries have to uploaded. Then, data are uploaded (rsoil_tsensitivity_data11192018.csv). Data are available on https://github.com/petacapek/Rsoil_Tsensitivity.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(minpack.lm)
+library(segmented)
+library(arm)
+library(FME)
+library(DEoptim)
+library(emmeans)
+library(knitr)
+library(kableExtra)
+
+dat<-read.csv("rsoil_tsensitivity_data11192018.csv")
+dat<-dat[order(dat$ID), ]
+summary(dat)
+
+```
+
+First order decay equation and multiplicative equation are fitted across all observations. To fit the equations, Differential Evolution algorithm is used to minimize the objective function, which calculates Log Likelihood of the fit multiplied by negative 2. $R^{2}$ and AIC are calculated for each equation and compared.
+
+```{r First order decay function, include=FALSE}
+first_global<-function(data){
+  
+  #creating function for parameters estimation
+  estim<-function(fr){
+    #defining the objective function
+    est<-function(x){
+      
+      parnames<-c("ks", "Eas")
+      par<-x[1:length(parnames)]
+      
+      Ctot<-as.numeric(fr[, "Ctot"])
+      Temp<-as.numeric(fr[, "Temperature"])
+      
+      yhat<-Ctot*par[1]*exp(par[2]/Temp/8.314)
+      obs<-as.numeric(fr[, "Rsoil"])
+      
+      # SSres<-sum(((obs-yhat)^2), na.rm = T)
+      # SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
+      # Rsq<-1-(SSres/SStot)
+      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
+      # AIC<-4-2*ll
+      
+      return(-2*ll)
+      
+    }
+    
+    #defining the goodness of fit function
+    goodness<-function(x){
+      
+      parnames<-c("k", "Eas")
+      par<-x[1:length(parnames)]
+      
+      Ctot<-as.numeric(fr[, "Ctot"])
+      Temp<-as.numeric(fr[, "Temperature"])
+      
+      yhat<-Ctot*par[1]*exp(par[2]/Temp/8.314)
+      obs<-as.numeric(fr[, "Rsoil"])
+      
+      SSres<-sum(((obs-yhat)^2), na.rm = T)
+      SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
+      Rsq<-1-(SSres/SStot)
+      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
+      AIC<-4-2*ll
+      
+      return(c(R2=Rsq,AIC=AIC, ll=ll))
+      
+    }
+    
+    #approximate parameter estimation is done by MCMC method
+    par_mcmc<-modMCMC(f=est, p=c(k=1e10, Eas=-50000),
+                      lower=c(k=1e-6, Eas=-3000000),
+                      upper=c(k=1e50, Eas=10000), niter=100000)
+    
+    #lower and upper limits for parameters are extracted
+    pl<-summary(par_mcmc)["min",]
+    pu<-summary(par_mcmc)["max",]
+    
+    #these limits are used to find global optimum by DEoptim
+    opt_par<-DEoptim(fn=est, lower=pl, upper=pu,
+                     control = c(itermax = 10000, steptol = 50, reltol = 1e-8,
+                                 trace=FALSE, strategy=3, NP=500))
+    
+    #goodness of fit
+    fit<-goodness(opt_par$optim$bestmem)
+    
+    #approximate parameter estimation is done by MCMC method
+    par_prof<-modMCMC(f=est, p=opt_par$optim$bestmem,
+                      lower=pl,
+                      upper=pu, niter=100000)
+    
+    #goodness of fit
+    fit<-goodness(opt_par$optim$bestmem)
+    
+    #best parameters
+    p<-opt_par$optim$bestmem
+    names(p)<-c("ks", "Eas")
+    
+    #sd of parameters
+    p.sd<-summary(par_prof)[2,]
+    
+    #return list with opt_par and par_prof
+    estim_out<-list()
+    estim_out$pars<-p
+    estim_out$pars.sd<-p.sd
+    estim_out$fit<-fit
+    
+    return(estim_out)
+  }
+  
+  #do the calculation
+  res<-estim(fr=data)
+  ks<-as.numeric(res$pars[1])
+  Eas<-as.numeric(res$pars[2])
+  ks.sd<-as.numeric(res$pars.sd[1])
+  Eas.sd<-as.numeric(res$pars.sd[2])
+  R2s<-as.numeric(res$fit[1])
+  AICs<-as.numeric(res$fit[2])
+  lls<-as.numeric(res$fit[3])
+    
+    
+  
+  return(c(ks=ks, Eas=Eas, ks.sd=ks.sd, Eas.sd=Eas.sd, R2=R2s, AIC=AICs, ll=lls))
+  
+}
+```
+
+```{r Multiplicative equation, include=FALSE}
+
+coupled_global<-function(data){
+  
+  #creating function for parameters estimation
+  estim<-function(fr){
+    #defining the objective function
+    est<-function(x){
+      
+      parnames<-c("ks", "Eas")
+      par<-x[1:length(parnames)]
+      
+      Cmic<-as.numeric(fr[, "Biomass"])
+      Ctot<-as.numeric(fr[, "Ctot"])
+      Temp<-as.numeric(fr[, "Temperature"])
+      
+      yhat<-Ctot*Cmic*par[1]*exp(par[2]/Temp/8.314)
+      obs<-as.numeric(fr[, "Rsoil"])
+      
+      # SSres<-sum(((obs-yhat)^2), na.rm = T)
+      # SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
+      # Rsq<-1-(SSres/SStot)
+      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
+      # AIC<-4-2*ll
+      
+      return(-2*ll)
+      
+    }
+    
+    #defining the goodness of fit function
+    goodness<-function(x){
+      
+      parnames<-c("k", "Eas")
+      par<-x[1:length(parnames)]
+      
+      Cmic<-as.numeric(fr[, "Biomass"])
+      Ctot<-as.numeric(fr[, "Ctot"])
+      Temp<-as.numeric(fr[, "Temperature"])
+      
+      yhat<-Cmic*Ctot*par[1]*exp(par[2]/Temp/8.314)
+      obs<-as.numeric(fr[, "Rsoil"])
+      
+      SSres<-sum(((obs-yhat)^2), na.rm = T)
+      SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
+      Rsq<-1-(SSres/SStot)
+      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
+      AIC<-4-2*ll
+      
+      return(c(R2=Rsq,AIC=AIC, ll=ll))
+      
+    }
+    
+    #approximate parameter estimation is done by MCMC method
+    par_mcmc<-modMCMC(f=est, p=c(k=1e10, Eas=-50000),
+                      lower=c(k=1e-6, Eas=-3000000),
+                      upper=c(k=1e50, Eas=10000), niter=100000)
+    
+    #lower and upper limits for parameters are extracted
+    pl<-summary(par_mcmc)["min",]
+    pu<-summary(par_mcmc)["max",]
+    
+    #these limits are used to find global optimum by DEoptim
+    opt_par<-DEoptim(fn=est, lower=pl, upper=pu,
+                     control = c(itermax = 10000, steptol = 50, reltol = 1e-8,
+                                 trace=FALSE, strategy=3, NP=500))
+    
+    #goodness of fit
+    fit<-goodness(opt_par$optim$bestmem)
+    
+    #approximate parameter estimation is done by MCMC method
+    par_prof<-modMCMC(f=est, p=opt_par$optim$bestmem,
+                      lower=pl,
+                      upper=pu, niter=100000)
+    
+    #goodness of fit
+    fit<-goodness(opt_par$optim$bestmem)
+    
+    #best parameters
+    p<-opt_par$optim$bestmem
+    names(p)<-c("ksb", "Easb")
+    
+    #sd of parameters
+    p.sd<-summary(par_prof)[2,]
+    
+    #return list with opt_par and par_prof
+    estim_out<-list()
+    estim_out$pars<-p
+    estim_out$pars.sd<-p.sd
+    estim_out$fit<-fit
+    
+    return(estim_out)
+  }
+  
+  #do the calculation
+  res<-estim(fr=data)
+  ksb<-as.numeric(res$pars[1])
+  Easb<-as.numeric(res$pars[2])
+  ksb.sd<-as.numeric(res$pars.sd[1])
+  Easb.sd<-as.numeric(res$pars.sd[2])
+  R2sb<-as.numeric(res$fit[1])
+  AICsb<-as.numeric(res$fit[2])
+  llsb<-as.numeric(res$fit[3])
+    
+    
+  
+  return(c(ksb=ksb, Easb=Easb, ksb.sd=ksb.sd, Easb.sd=Easb.sd, R2=R2sb, AIC=AICsb, ll=llsb))
+  
+}
+```
+
+```{r global comparison, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+first_order_global<-first_global(dat)
+multi_global<-coupled_global(dat)
+
+t.a1<-data.frame(Equation=c("First order decay", "Multiplicative"),
+                 R2=c(first_order_global[5], multi_global[5]),
+                 AIC=c(first_order_global[6], multi_global[6]),
+                 dAIC=as.numeric(c(" ",first_order_global[6]-multi_global[6])),
+                 p=c(" ", "<0.001"))
+
+options(knitr.kable.NA = '')
+
+
+kable(t.a1, digits = c(2), align = 'c', "html", booktabs=T, col.names = c('Equation', '$\\R^{2}$', 'AIC', '$\\Delta~AIC$', 'p'), caption = "_**Table S1:** Goodness of fit of the first order decay equation and the multiplicative equation with Arrhenius equation temperature response function. Goodness of fit is expressed as the coefficient of determination $R^2$ and Akaike Information Criterion (AIC). Equation fits are compared by AIC (see Mtareials and Methods for details.)_") %>% 
+  kable_styling()
+
+```
+
+Results are further compared graphically. 
+
+```{r Fig. 1 of the main text, echo=FALSE, fig.cap="Fig. S1: Goodness of correspondence between measured and predicted soil respiration rate. The respiration rate was predicted by two different equations (eq. 3 in the main text - First order and eq. 4 in the main text - Multiplicative equation, see Materials and Methods for details). Black dashed line represents 1:1 correspondence. Coefficient of determination (R2) is reported for each equation.  Both axis are on the logarithmic scale. ", fig.height=6, fig.width=12, message=FALSE, warning=FALSE}
+ovp1<-dat[, c("Rsoil", "Biomass", "Ctot", "Temperature")]
+ovp1$Legend<-c("First order")
+ovp1$Pred<-ovp1$Ctot*first_order_global[1]*exp(first_order_global[2]/8.314/ovp1$Temperature)
+lbfirst<-paste("R^2 == ", round(first_order_global[5], 2))
+
+ovp2<-dat[, c("Rsoil", "Biomass", "Ctot", "Temperature")]
+ovp2$Legend<-c("Multiplicative")
+ovp2$Pred<-ovp2$Ctot*ovp2$Biomass*multi_global[1]*exp(multi_global[2]/8.314/ovp2$Temperature)
+lbcoupled<-paste("R^2 == ", round(multi_global[5], 2))
+
+ovp<-rbind(ovp1, ovp2)
+ovp$Legend<-factor(ovp$Legend, levels=c("First order", "Multiplicative"))
+
+#6 to 12 inches when exported to pdf
+ggplot(ovp, aes(Rsoil, Pred))+geom_point(size=2,shape=21, alpha=0.5,fill="dodgerblue3")+
+  geom_abline(intercept = 0, slope=1, lwd=0.5, colour="black", lty=2)+
+  facet_grid(.~Legend)+
+  scale_y_log10(limits=c(0.01,1000), breaks=c(0.01, 0.1, 1, 10, 100, 1000), 
+                labels=c("0.01", "0.1", "1", "10", "100", "1000"))+
+  scale_x_log10(limits=c(0.01,1000), breaks=c(0.01, 0.1, 1, 10, 100, 1000),
+                labels=c("0.01", "0.1", "1", "10", "100", "1000"))+
+  xlab(expression(paste("Measured respiration rate (nmol ",g^{-1}~h^{-1}, ")")))+
+  ylab(expression(paste("Predicted respiration rate (nmol ",g^{-1}~h^{-1}, ")")))+
+  geom_text(data=data.frame(x=0.03, y=900, label=c(lbfirst, lbcoupled), 
+                            Legend=c("First order","Multiplicative")), 
+            aes(x,y,label=label), inherit.aes=FALSE, parse=T, size=3.5)+
+  theme_bw()+
+  theme(axis.line.x = element_blank(),
+        axis.line.y =element_blank(),
+        plot.background=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size=10,colour="black"),
+        axis.text.x = element_text(size=10,colour="black"),
+        axis.title = element_text(size=10,colour="black"),
+        legend.text=element_text(size=10,colour="black"),
+        legend.title=element_blank(),
+        legend.justification=c(1,0), legend.position=c(0.99,0.01),
+        legend.key.size = unit(1,'lines'),
+        legend.background=element_rect(fill=NA, colour=NA),
+        strip.text.x = element_text(size=10),
+        strip.background = element_rect(colour="black", fill = "white"),
+        panel.spacing = unit(0.5, "lines"))
+```
+
+Next, presence of breakpoints in temperature response of heterotrophic soil respiration rate ($R_{SOIL}$) are analyzed for. The same analysis is conducted with scaled microbial biomass, expressed as log Response Ratio (see Materials and Methods in the main text for details). Results of the analysis are shown graphically. We use Arrhenius plot to vizualize the results.
+
+```{r Fig. 2, echo=FALSE, warning=FALSE, fig.cap="Fig. S2: Arrhenius plot of the relationship between the temperature (inverted value multiplied by the gas constant, see eq. 6 in Materials and Methods for details) and the natural logarithm of soil respiration rate (blue points, left y-axis). Symbols represent median respiration rate calculated over five degrees Kelvin interval increments (the whole temperature range is 274.6 - 323.1 K, i.e. 2 - 50°C). Error bars represent upper and lower quartiles. Vertical dashed line represent breakpoint temperature (25.2 ± 2.4 °C) at which the temperature sensitivity of soil respiration rate changes. Blue dashed line represents segmented linear regression (eq. 6). The breakpoint temperature corresponds with the breakpoint temperature of decadic logarithm of soil microbial biomass response ratio ($logRR_{Biomass}$, grey points, right y-axis). $logRR_{Biomass}$ defines the magnitude of change of microbial biomass at the given temperature relative to control. Control is defined as the microbial biomass at the the temperature 15°C or the closest temperature within a respective data set. $logRR_{Biomass}$ zero (solid horizontal line) indicates no change of microbial biomass relative to control. $logRR_{Biomass}$ less than zero indicates decrease of microbial biomass relative to control and vice versa.  Symbols represent median $logRR_{Biomass}$ calculated over five degrees Kelvin interval increments. Error bars represent upper and lower quartiles."}
+rbg<-dat
+rbg$Temp<-1/8.314/(rbg$Temperature)
+rbg$Tcut<-cut(rbg$Temperature, 20)
+
+#calculate median and quartiles for respiration rate and biomass
+rbg_sum<-rbg %>% group_by(Tcut) %>% summarize(Rmed=log(median(Rsoil, na.rm=T)),
+                                              Rl=log(quantile(Rsoil, probs = 0.25, na.rm = T)),
+                                              Ru=log(quantile(Rsoil, probs = 0.75, na.rm = T)),
+                                              Bmed=log10(median(Bscaled, na.rm=T)),
+                                              Bl=log10(quantile(Bscaled, probs = 0.25, na.rm = T)),
+                                              Bu=log10(quantile(Bscaled, probs = 0.75, na.rm = T)),
+                                              Temp=median(Temp))
+
+#statistic
+lm.all<-lm(log(Rsoil)~Temp, offset = log(Ctot), rbg)
+all.o<-segmented(lm.all, seg.Z = ~Temp)
+break.all<-all.o$psi[2]
+1/break.all/8.314-273.15
+#davies.test(lm.all, ~Temp)
+Predictions<-data.frame(Temp=1/8.314/seq(273.15, 323.15))
+Predictions$all<-predict(all.o, newdata=Predictions)
+
+#biomass scaled
+lmb.all<-lm(log(Bscaled)~Temp, rbg)
+lmb.o<-segmented(lmb.all, seg.Z = ~Temp)
+#summary(lmb.o)
+break.b<-lmb.o$psi[2]
+1/break.b/8.314-273.15
+#davies.test(lmb.all, ~Temp)
+
+
+#6 to 8 inches when exported to pdf
+ggplot(rbg_sum, aes(x=Temp))+
+  geom_hline(yintercept = 0)+
+  geom_vline(xintercept = break.all, lwd=0.5, colour="black", lty=2)+
+  geom_errorbar(aes(ymin=Rl, ymax=Ru),colour="black",width=0.000001)+
+  geom_point(size=2,shape=21, aes(y=Rmed, fill="Respiration rate"))+
+  geom_line(data = Predictions, aes(x=Temp, y=all*1.137391),colour="dodgerblue3", lwd=0.5, lty=2)+
+  geom_errorbar(aes(ymin=Bl*5, ymax=Bu*6),colour="black",width=0.000001)+
+  geom_point(size=2,shape=21, aes(y=Bmed*5, fill="Biomass"))+
+  scale_y_continuous(sec.axis = sec_axis(~./5, 
+                                         name = expression(paste(italic("log")~RR[Biomass]))))+
+  scale_colour_manual(values = c("grey60", "dodgerblue3"))+
+  scale_fill_manual(values = c("grey60", "dodgerblue3"))+
+  labs(y = expression(paste(italic("ln") ,"(Respiration rate) (nmol ",g^{-1}~h^{-1}, ")")),
+       x = expression(paste(frac(1,8.314%*%Temperature~(K)))),
+       colour = "Legend")+
+  theme_bw()+
+  theme(axis.line.x = element_blank(),
+        axis.line.y =element_blank(),
+        plot.background=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size=10,colour="black"),
+        axis.text.x = element_text(size=10,colour="black"),
+        axis.title = element_text(size=10,colour="black"),
+        legend.text=element_text(size=10,colour="black"),
+        legend.title=element_blank(),
+        legend.justification=c(1,0), legend.position=c(0.99,0.01),
+        legend.key.size = unit(1,'lines'),
+        legend.background=element_rect(fill=NA, colour=NA),
+        strip.text.x = element_text(size=10),
+        strip.background = element_rect(colour="black", fill = "white"),
+        panel.spacing = unit(0.25, "lines"))
+```
+
+As shown above, there is one significant breakpoint in the relationship between the temperature and $R_{SOIL}$ at the temperature 25.3°C. There is also one significant breakpoint in the relationship between the temperature and microbial biomass log Response ratio ($logRR_{Biomass}$ in Fig. 2) at the temperature 27.1°C. Given the standard error of the estimate (2.4°C and 1°C), both estimates are statistically same.
+
+The same analysis is conducted with four different soils published by Santruckova et al. (2003). Results of the analysis are shown graphically. 
+
+```{r Fig. 3, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S3: Respiration rate (blue points, left y-axis) and the microbial biomass (grey points, right y-axis) as a function of the temperature in four different soils (Santruckova et al., 2003). Blue solid lines represent segmented linear regression (eq. 6). Coefficient of determination of the regression is reported (R2). Vertical black dashed lines represent the breakpoint temperature of segmented linear regression. Blue dot-dashed line represent the best fit of Macromolecular Rate Theory equation (eq. 8). For all soils, the segmented linear regression fits the data significantly better than Macromolecular Rate Theory equation (???AIC = -45.3, p<0.001 for Pokulikha; ???AIC = -6.6, p=0.037 for Zotino; ???AIC = -74.6, p<0.001 for Bakhta; ???AIC = -64.1, p<0.001 for Nazimovo). Note that each box have different scale of left and right y-axis."}
+
+dat$Temp<-1/dat$Temperature/8.314
+
+#31
+###statistics
+lm31<-lm(log(Rsoil)~Temp, subset(dat, ID==31))
+o31<-segmented(lm31, seg.Z = ~Temp)
+break31<-o31$psi[2]
+Predictions$o31<-predict(o31, newdata=Predictions)
+lb31<-paste("R^2 == ", round(as.numeric(summary(o31)[8]), 2))
+
+# lm31b<-lm(log(Biomass)~Temp, subset(dat, ID==31))
+# b31<-segmented(lm31b, seg.Z = ~Temp)
+1/8.314/o31$psi[2]-273.15
+(1/8.314/o31$psi[2]-273.15)-(1/8.314/(o31$psi[2]+o31$psi[3])-273.15)
+
+###MMR
+mmr<-function(data){
+  cost<-function(x){
+    par<-(x)
+    names(par)<-c("dH", "dCp", "dS", "Topt")
+    
+    obs<-log(data[,"Rsoil"])
+    Temp<-data[,"Temperature"]
+    Ctot<-log(data[,"Ctot"])
+    
+    
+    yhat<-Ctot+log(1.38e-23*Temp/6.63e-34*3600)-(par[1]+par[2]*(Temp-par[4]))/8.314/Temp+
+      (par[3]+par[2]*(log(Temp)-log(par[4])))/8.314
+    
+    ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
+    
+    return(-2*ll)
+  }
+  
+  #approximate parameter estimation is done by MCMC method
+  par_mcmc<-modMCMC(f=cost, p=c(dH=10000, dCp=-3000, dS=5000, Topt=300),
+                    lower=c(dH=-100000, dCp=-300000, dS=-50000, Topt=273.15),
+                    upper=c(dH=100000, dCp=300000, dS=50000, Topt=350), niter=50000)
+  
+  #lower and upper limits for parameters are extracted
+  pl<-summary(par_mcmc)["min",]
+  pu<-summary(par_mcmc)["max",]
+  
+  #these limits are used to find global optimum by DEoptim
+  opt_par<-DEoptim(fn=cost, lower=pl, upper=pu,
+                   control = c(itermax = 10000, steptol = 50, reltol = 1e-8,
+                               trace=FALSE, strategy=3, NP=250))
+  return(opt_par$optim$bestmem)
+}
+
+mmr31<-mmr(dat[dat$ID==31, ])
+
+
+
+dat31<-subset(dat, ID==31)
+dat31$label<-c("Pokulikha")
+
+fig31<-ggplot(dat31, aes(x=Temperature-273.15))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Rsoil, fill="Respiration rate"))+
+    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr31[1]+mmr31[2]*(Temperature-mmr31[4]))/8.314/Temperature+
+                          (mmr31[3]+mmr31[2]*(log(Temperature)-log(mmr31[4])))/8.314)),
+              lwd=0.5,colour="dodgerblue3", lty=4)+
+    geom_line(data=Predictions, aes(x=1/8.314/Temp-273.15, y=exp(o31)),colour="dodgerblue3", lwd=0.5)+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass*1.1, fill="Biomass"))+
+    scale_y_continuous(sec.axis = sec_axis(~./1.1, 
+                       name = c(" ")))+
+    scale_colour_manual(values = c("grey60", "dodgerblue3"))+
+    scale_fill_manual(values = c("grey60", "dodgerblue3"))+
+    geom_vline(xintercept = 1/8.314/break31-273.15, lwd=0.5, colour="black", lty=2)+
+    xlim(5,42)+
+    labs(y = expression(paste("Respiration rate (nmol ",g^{-1}~h^{-1}, ")")),
+         x = "Temperature (°C)",
+         colour = "Legend")+
+    annotate("text", x=9, y=60, label=lb31, parse=T, size=3.5)+
+    theme_bw()+
+    theme(axis.line.x = element_blank(),
+          axis.line.y =element_blank(),
+          plot.background=element_blank(),
+          axis.title.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.text.x = element_blank(),
+          axis.text = element_text(size=10,colour="black"),
+          legend.text=element_text(size=10,colour="black"),
+          legend.title=element_blank(),
+          legend.justification=c(0,1), legend.position=c(0.01,0.99),
+          legend.key.size = unit(1,'lines'),
+          legend.background=element_rect(fill=NA, colour=NA),
+          strip.text.x = element_text(size=10),
+          strip.background = element_rect(colour="black", fill = "white"),
+          plot.margin = unit(c(0.1, 0.08, 0,0.1), "in"))+facet_wrap(~label)
+
+#32
+###statistics
+lm32<-lm(log(Rsoil)~Temp, subset(dat, ID==32))
+o32<-segmented(lm32, seg.Z = ~Temp)
+break32<-o32$psi[2]
+Predictions$o32<-predict(o32, newdata=Predictions)
+lb32<-paste("R^2 == ", round(as.numeric(summary(o32)[8]), 2))
+
+mmr32<-mmr(dat[dat$ID==32, ])
+
+# lm32b<-lm(log(Biomass)~Temp, subset(dat.results2, ID==32))
+# b32<-segmented(lm32b, seg.Z = ~Temp)
+1/8.314/o32$psi[2]-273.15
+(1/8.314/o32$psi[2]-273.15)-(1/8.314/(o32$psi[2]+o32$psi[3])-273.15)
+
+dat32<-subset(dat, ID==32)
+dat32$label<-c("Bakhta")
+
+fig32<-ggplot(dat32, aes(x=Temperature-273.15))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Rsoil, fill="Respiration rate"))+
+    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr32[1]+mmr32[2]*(Temperature-mmr32[4]))/8.314/Temperature+
+                          (mmr32[3]+mmr32[2]*(log(Temperature)-log(mmr32[4])))/8.314)),
+              lwd=0.5,colour="dodgerblue3", lty=4)+
+    geom_line(data=Predictions, aes(x=1/8.314/Temp-273.15, y=exp(o32)), colour="dodgerblue3", lwd=0.5)+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass*1.1, fill="Biomass"))+
+    scale_y_continuous(sec.axis = sec_axis(~./1.1, 
+                       name = c(" ")))+
+    scale_colour_manual(values = c("grey60", "dodgerblue3"))+
+    scale_fill_manual(values = c("grey60", "dodgerblue3"))+
+    geom_vline(xintercept = 1/8.314/break32-273.15, lwd=0.5, colour="black", lty=2)+
+    xlim(5,42)+
+    labs(y = expression(paste("Respiration rate (nmol ",g^{-1}~h^{-1}, ")")),
+         x = "Temperature (°C)",
+         colour = "Legend")+
+    annotate("text", x=9, y=155, label=lb32, parse=T, size=3.5)+
+    theme_bw()+
+    theme(axis.line.x = element_blank(),
+          axis.line.y =element_blank(),
+          plot.background=element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.text = element_text(size=10,colour="black"),
+          legend.text=element_text(size=10,colour="black"),
+          legend.title=element_blank(),
+          legend.justification=c(0,1), legend.position="none",
+          legend.key.size = unit(1,'lines'),
+          legend.background=element_rect(fill=NA, colour=NA),
+          strip.text.x = element_text(size=10),
+          strip.background = element_rect(colour="black", fill = "white"),
+          plot.margin = unit(c(0, 0, 0.1,0.1), "in"))+facet_wrap(~label)
+
+#33
+###statistics
+lm33<-lm(log(Rsoil)~Temp, subset(dat, ID==33))
+o33<-segmented(lm33, seg.Z = ~Temp)
+break33<-o33$psi[2]
+Predictions$o33<-predict(o33, newdata=Predictions)
+lb33<-paste("R^2 == ", round(as.numeric(summary(o33)[8]), 2))
+
+mmr33<-mmr(dat[dat$ID==33, ])
+
+# lm33b<-lm(log(Biomass)~Temp, subset(dat.results2, ID==33))
+# b33<-segmented(lm33b, seg.Z = ~Temp)
+1/8.314/o33$psi[2]-273.15
+(1/8.314/o33$psi[2]-273.15)-(1/8.314/(o33$psi[2]+o33$psi[3])-273.15)
+
+dat33<-subset(dat, ID==33)
+dat33$label<-c("Zotino")
+
+fig33<-ggplot(dat33, aes(x=Temperature-273.15))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Rsoil, fill="Respiration rate"))+
+    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr33[1]+mmr33[2]*(Temperature-mmr33[4]))/8.314/Temperature+
+                          (mmr33[3]+mmr33[2]*(log(Temperature)-log(mmr33[4])))/8.314)),
+              lwd=0.5,colour="dodgerblue3", lty=4)+
+    geom_line(data=Predictions, aes(x=1/8.314/Temp-273.15, y=exp(o33)), colour="dodgerblue3", lwd=0.5)+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass/5, fill="Biomass"))+
+    scale_y_continuous(sec.axis = sec_axis(~.*5, 
+                       name = expression(paste("Biomass (", mu, "mol ",g^{-1}, ")"))))+
+    scale_colour_manual(values = c("grey60", "dodgerblue3"))+
+    scale_fill_manual(values = c("grey60", "dodgerblue3"))+
+    geom_vline(xintercept = 1/8.314/break33-273.15, lwd=0.5, colour="black", lty=2)+
+    xlim(5,42)+
+    labs(y = (" "),
+         x = "Temperature (°C)",
+         colour = "Legend")+
+    annotate("text", x=9, y=15.5, label=lb33, parse=T, size=3.5)+
+    theme_bw()+
+    theme(axis.line.x = element_blank(),
+          axis.line.y =element_blank(),
+          axis.title.x = element_blank(),
+          plot.background=element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.text = element_text(size=10,colour="black"),
+          legend.text=element_text(size=10,colour="black"),
+          legend.title=element_blank(),
+          legend.justification=c(0,1), legend.position="none",
+          legend.key.size = unit(1,'lines'),
+          legend.background=element_rect(fill=NA, colour=NA),
+          strip.text.x = element_text(size=10),
+          strip.background = element_rect(colour="black", fill = "white"),
+          plot.margin = unit(c(0.1, 0.18, 0,0), "in"))+facet_wrap(~label)
+
+#34
+###statistics
+lm34<-lm(log(Rsoil)~Temp, subset(dat, ID==34))
+o34<-segmented(lm34, seg.Z = ~Temp)
+break34<-o34$psi[2]
+Predictions$o34<-predict(o34, newdata=Predictions)
+lb34<-paste("R^2 == ", round(as.numeric(summary(o34)[8]), 2))
+
+mmr34<-mmr(dat[dat$ID==34, ])
+
+# lm34b<-lm(log(Biomass)~Temp, subset(dat.results2, ID==34))
+# b34<-segmented(lm34b, seg.Z = ~Temp)
+1/8.314/o34$psi[2]-273.15
+(1/8.314/o34$psi[2]-273.15)-(1/8.314/(o34$psi[2]+o34$psi[3])-273.15)
+
+dat34<-subset(dat, ID==34)
+dat34$label<-c("Nazimovo")
+
+
+
+fig34<-ggplot(dat34, aes(x=Temperature-273.15))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Rsoil, fill="Respiration rate"))+
+    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr34[1]+mmr34[2]*(Temperature-mmr34[4]))/8.314/Temperature+
+                          (mmr34[3]+mmr34[2]*(log(Temperature)-log(mmr34[4])))/8.314)),
+              lwd=0.5,colour="dodgerblue3", lty=4)+
+    geom_line(data=Predictions, aes(x=1/8.314/Temp-273.15, y=exp(o34)), colour="dodgerblue3", lwd=0.5)+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass/5, fill="Biomass"))+
+    scale_y_continuous(sec.axis = sec_axis(~.*5, 
+                                           name = expression(paste("Biomass (", mu, "mol ",g^{-1}, ")"))))+
+    scale_colour_manual(values = c("grey60", "dodgerblue3"))+
+    scale_fill_manual(values = c("grey60", "dodgerblue3"))+
+    geom_vline(xintercept = 1/8.314/break34-273.15, lwd=0.5, colour="black", lty=2)+
+    xlim(5,42)+
+    labs(y = (" "),
+         x = "Temperature (°C)",
+         colour = "Legend")+
+    annotate("text", x=20, y=41, label=lb34, parse=T, size=3.5)+
+    theme_bw()+
+    theme(axis.line.x = element_blank(),
+          axis.line.y =element_blank(),
+          plot.background=element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.text = element_text(size=10,colour="black"),
+          legend.text=element_text(size=10,colour="black"),
+          legend.title=element_blank(),
+          legend.justification=c(0,1), legend.position="none",
+          legend.key.size = unit(1,'lines'),
+          legend.background=element_rect(fill=NA, colour=NA),
+          strip.text.x = element_text(size=10),
+          strip.background = element_rect(colour="black", fill = "white"),
+          plot.margin = unit(c(0, 0.1, 0.1,0), "in"))+facet_wrap(~label)
+
+#6 to 8 inches when exported to pdf
+grid.arrange(fig31, fig33, fig32, fig34, ncol=2)
+```
+
+In fig. S3, temperature response of $R_{SOIL}$ is fitted by the first order decay equation with Arrhenius equation as a tempeture response function and with two temperature sensitivities for two temperature intervals (soild line in fig. S3). Alternatively, Macromolecular Rate Theory equation (see Materials and Methods for details) can be used. This equation was used previously to explain attenuation of temperature sensitivity of $R_{SOIL}$ (dot-dashed line in fig. S3). Fit of both equations are compared by AIC
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, results='asis'}
+
+#31
+AICcalc<-function(Observed, Predicted, ncoef){
+  ll<--length(Observed)*log(2*mean(Observed, na.rm=T)*sd(Observed, na.rm=T)^2)/2-sum((Observed-Predicted)^2, na.rm=T)/2/sd(Observed, na.rm=T)^2
+  return(2*ncoef-2*ll)
+}
+
+#segmented
+AIC31<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==31), "Rsoil"],
+        Predicted = exp(predict(o31)), ncoef = 3)
+#mmr
+MMR31<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==31), "Rsoil"],
+        Predicted = with(dat[(!is.na(dat$Rsoil) & dat$ID==31),],
+                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr31[1]+mmr31[2]*(Temperature-mmr31[4]))/8.314/Temperature+
+                               (mmr31[3]+mmr31[2]*(log(Temperature)-log(mmr31[4])))/8.314)), ncoef = 4)
+
+exp((AIC31-MMR31)/2)
+
+#32
+#segmented
+AIC32<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==32), "Rsoil"],
+        Predicted = exp(predict(o32)), ncoef = 3)
+#mmr
+MMR32<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==32), "Rsoil"],
+        Predicted = with(dat[(!is.na(dat$Rsoil) & dat$ID==32),],
+                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr32[1]+mmr32[2]*(Temperature-mmr32[4]))/8.314/Temperature+
+                               (mmr32[3]+mmr32[2]*(log(Temperature)-log(mmr32[4])))/8.314)), ncoef = 4)
+
+exp((AIC32-MMR32)/2)
+
+#33
+#segmented
+AIC33<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==33), "Rsoil"],
+        Predicted = exp(predict(o33)), ncoef = 3)
+#mmr
+MMR33<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==33), "Rsoil"],
+        Predicted = with(dat[(!is.na(dat$Rsoil) & dat$ID==33),],
+                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr33[1]+mmr33[2]*(Temperature-mmr33[4]))/8.314/Temperature+
+                               (mmr33[3]+mmr33[2]*(log(Temperature)-log(mmr33[4])))/8.314)), ncoef = 4)
+
+exp((AIC33-MMR33)/2)
+
+
+#34
+
+#segmented
+AIC34<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==34), "Rsoil"],
+        Predicted = exp(predict(o34)), ncoef = 3)
+#mmr
+MMR34<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==34), "Rsoil"],
+        Predicted = with(dat[(!is.na(dat$Rsoil) & dat$ID==34),],
+                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr34[1]+mmr34[2]*(Temperature-mmr34[4]))/8.314/Temperature+
+                               (mmr34[3]+mmr34[2]*(log(Temperature)-log(mmr34[4])))/8.314)), ncoef = 4)
+
+exp((AIC34-MMR34)/2)
+
+t.a2<-data.frame(AIC=c(AIC31, MMR31, AIC32, MMR32, AIC33, MMR33, AIC34, MMR34),
+                 dAIC=c(NA, AIC31-MMR31, NA, AIC32-MMR32, NA, AIC33-MMR33,NA, AIC34-MMR34),
+                 p=c(NA, exp((AIC31-MMR31)/2), NA, exp((AIC32-MMR32)/2), NA, exp((AIC33-MMR33)/2), NA, exp((AIC34-MMR34)/2)))
+
+options(knitr.kable.NA = '')
+
+
+kable(t.a2, digits = c(2), align = 'c', "html", booktabs=T, col.names = c('AIC', '$\\Delta~AIC$', 'p'), row.names=F, caption = "Table S2: Goodness of fit of two equations (first order decay equation with Arrhenius equation as a tempeture response function and with two temperature sensitivities for two temperature intervals, and Macromolecular Rate theory equation respectively) calculated for four different soils shown in Fig. S3. Goodness of fit is expressed as Akaike Infromation Criterion (AIC). Difference in AIC ($\Delta~AIC$) of two equations and its statistical significance (p) is reported.") %>% 
+  kable_styling(bootstrap_options = c("hover")) %>%
+  group_rows("Pokulikha", 1, 2) %>%
+  group_rows("Bakhta", 3, 4) %>%
+  group_rows("Zotino", 5, 6) %>%
+  group_rows("Nazimovo", 7, 8)
+
+
+
+```
+
+
+To evaluate the effect of temperature-associated changes of microbial biomass on apparent temperature sensitivity of $R_{SOIL}$, activation energy parameter ($E_{A}$) of the Arrhenius equation is estimated for each observation separately. This is done for the first order decay equation and multiplicative equation.
+
+```{r par estimates 1, message=FALSE, warning=FALSE, include=FALSE}
+first_order<-function(data){
+  
+  #list of unique observations
+  IDs<-unique(data$ID)
+  
+  #defining all variables to calculate
+  #parameters
+  ks<-numeric()
+  Eas<-numeric()
+  
+  #standard errors
+  ks.sd<-numeric()
+  Eas.sd<-numeric()
+  
+  #r.squared
+  R2s<-numeric()
+  
+  #AIC
+  AICs<-numeric()
+  
+  #Log likelihood
+  lls<-numeric()
+  
+  #creating function for parameters estimation
+  estim<-function(fr){
+    #defining the objective function
+    est<-function(x){
+      
+      parnames<-c("ks", "Eas")
+      par<-x[1:length(parnames)]
+      
+      Ctot<-as.numeric(fr[, "Ctot"])
+      Temp<-as.numeric(fr[, "Temperature"])
+      
+      yhat<-Ctot*par[1]*exp(par[2]/Temp/8.314)
+      obs<-as.numeric(fr[, "Rsoil"])
+      
+      # SSres<-sum(((obs-yhat)^2), na.rm = T)
+      # SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
+      # Rsq<-1-(SSres/SStot)
+      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
+      # AIC<-4-2*ll
+      
+      return(-2*ll)
+      
+    }
+    
+    #defining the goodness of fit function
+    goodness<-function(x){
+      
+      parnames<-c("k", "Eas")
+      par<-x[1:length(parnames)]
+      
+      Ctot<-as.numeric(fr[, "Ctot"])
+      Temp<-as.numeric(fr[, "Temperature"])
+      
+      yhat<-Ctot*par[1]*exp(par[2]/Temp/8.314)
+      obs<-as.numeric(fr[, "Rsoil"])
+      
+      SSres<-sum(((obs-yhat)^2), na.rm = T)
+      SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
+      Rsq<-1-(SSres/SStot)
+      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
+      AIC<-4-2*ll
+      
+      return(c(R2=Rsq,AIC=AIC, ll=ll))
+      
+    }
+    
+    #approximate parameter estimation is done by MCMC method
+    par_mcmc<-modMCMC(f=est, p=c(k=1e10, Eas=-50000),
+                      lower=c(k=1e-6, Eas=-3000000),
+                      upper=c(k=1e50, Eas=10000), niter=10000)
+    
+    #nls estimation
+    Ctot<-as.numeric(fr[, "Ctot"])
+    Temp<-as.numeric(fr[, "Temperature"])
+    obs<-as.numeric(fr[, "Rsoil"])
+    
+    nls.out<-nls(obs~Ctot*ks*exp(Ea/8.314/Temp), start = list(ks=par_mcmc$bestpar[1],
+                                                             Ea=par_mcmc$bestpar[2]),
+                control = c(maxiter=1e6))
+    
+    #goodness of fit
+    fit<-goodness(coef(nls.out))
+    
+    #best parameters
+    p<-coef(nls.out)
+    names(p)<-c("ks", "Eas")
+    
+    #sd of parameters
+    p.sd<-summary(par_mcmc)[2,]
+    
+    #return list with opt_par and par_prof
+    estim_out<-list()
+    estim_out$pars<-p
+    estim_out$pars.sd<-p.sd
+    estim_out$fit<-fit
+    
+    return(estim_out)
+  }
+  
+  #do the calculation
+  for(i in IDs){
+    
+    res<-estim(fr=data[data$ID==i, ])
+    
+    ks<-append(ks, rep(as.numeric(res$pars[1]), times=nrow(data[data$ID==i, ])))
+    Eas<-append(Eas, rep(as.numeric(res$pars[2]), times=nrow(data[data$ID==i, ])))
+    ks.sd<-append(ks.sd, rep(as.numeric(res$pars.sd[1]), times=nrow(data[data$ID==i, ])))
+    Eas.sd<-append(Eas.sd, rep(as.numeric(res$pars.sd[2]), times=nrow(data[data$ID==i, ])))
+    R2s<-append(R2s, rep(as.numeric(res$fit[1]), times=nrow(data[data$ID==i, ])))
+    AICs<-append(AICs, rep(as.numeric(res$fit[2]), times=nrow(data[data$ID==i, ])))
+    lls<-append(lls, rep(as.numeric(res$fit[3]), times=nrow(data[data$ID==i, ])))
+    
+    }
+  
+  return(data.frame(ks, Eas, ks.sd, Eas.sd, R2s, AICs, lls))
+  
+}
+
+dat.results<-cbind(dat, first_order(dat))
+
+```
+
+```{r par estimates 2, message=FALSE, warning=FALSE, include=FALSE}
+coupled<-function(data){
+  
+  #list of unique observations
+  IDs<-unique(data$ID)
+  
+  #defining all variables to calculate
+  #parameters
+  ksb<-numeric()
+  Easb<-numeric()
+  
+  #standard errors
+  ksb.sd<-numeric()
+  Easb.sd<-numeric()
+  
+  #r.squared
+  R2sb<-numeric()
+  
+  #AIC
+  AICsb<-numeric()
+  
+  #Log likelihood
+  llsb<-numeric()
+  
+  #creating function for parameters estimation
+  #creating function for parameters estimation
+  estim<-function(fr){
+    
+    #defining the objective function
+    est<-function(x){
+      
+      parnames<-c("ksb", "Easb")
+      par<-x[1:length(parnames)]
+      
+      Ctot<-as.numeric(fr[, "Ctot"])
+      Cmic<-as.numeric(fr[, "Biomass"])
+      Temp<-as.numeric(fr[, "Temperature"])
+      
+      yhat<-Ctot*Cmic*par[1]*exp(par[2]/Temp/8.314)
+      obs<-as.numeric(fr[, "Rsoil"])
+      
+      # SSres<-sum(((obs-yhat)^2), na.rm = T)
+      # SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
+      # Rsq<-1-(SSres/SStot)
+      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
+      # AIC<-4-2*ll
+      
+      return(-2*ll)
+      
+    }
+    
+    #defining the goodness of fit function
+    goodness<-function(x){
+      
+      parnames<-c("ksb", "Easb")
+      par<-x[1:length(parnames)]
+      
+      Ctot<-as.numeric(fr[, "Ctot"])
+      Cmic<-as.numeric(fr[, "Biomass"])
+      Temp<-as.numeric(fr[, "Temperature"])
+      
+      yhat<-Ctot*Cmic*par[1]*exp(par[2]/Temp/8.314)
+      obs<-as.numeric(fr[, "Rsoil"])
+      
+      SSres<-sum(((obs-yhat)^2), na.rm = T)
+      SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
+      Rsq<-1-(SSres/SStot)
+      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
+      AIC<-4-2*ll
+      
+      return(c(R2=Rsq,AIC=AIC, ll=ll))
+      
+    }
+    
+    #approximate parameter estimation is done by MCMC method
+    par_mcmc<-modMCMC(f=est, p=c(k=1e10, Eas=-50000),
+                      lower=c(k=1e-6, Eas=-3000000),
+                      upper=c(k=1e50, Eas=10000), niter=10000)
+    
+    #nls estimation
+    Ctot<-as.numeric(fr[, "Ctot"])
+    Cmic<-as.numeric(fr[, "Biomass"])
+    Temp<-as.numeric(fr[, "Temperature"])
+    obs<-as.numeric(fr[, "Rsoil"])
+    
+    nls.out<-nls(obs~Ctot*Cmic*k*exp(Ea/8.314/Temp), start = list(k=par_mcmc$bestpar[1],
+                                                             Ea=par_mcmc$bestpar[2]),
+                 control = c(maxiter=1e6, tol=1, minFactor=1e-10))
+    
+    #goodness of fit
+    fit<-goodness(coef(nls.out))
+    
+    #best parameters
+    p<-coef(nls.out)
+    names(p)<-c("ksb", "Easb")
+    
+    #sd of parameters
+    p.sd<-summary(par_mcmc)[2,]
+    
+    #return list with opt_par and par_prof
+    estim_out<-list()
+    estim_out$pars<-p
+    estim_out$pars.sd<-p.sd
+    estim_out$fit<-fit
+    
+    return(estim_out)
+  }
+  
+  #do the calculation
+  for(i in IDs){
+    
+    res<-estim(fr=data[data$ID==i, ])
+    
+    ksb<-append(ksb, rep(as.numeric(res$pars[1]), times=nrow(data[data$ID==i, ])))
+    Easb<-append(Easb, rep(as.numeric(res$pars[2]), times=nrow(data[data$ID==i, ])))
+    ksb.sd<-append(ksb.sd, rep(as.numeric(res$pars.sd[1]), times=nrow(data[data$ID==i, ])))
+    Easb.sd<-append(Easb.sd, rep(as.numeric(res$pars.sd[2]), times=nrow(data[data$ID==i, ])))
+    R2sb<-append(R2sb, rep(as.numeric(res$fit[1]), times=nrow(data[data$ID==i, ])))
+    AICsb<-append(AICsb, rep(as.numeric(res$fit[2]), times=nrow(data[data$ID==i, ])))
+    llsb<-append(llsb, rep(as.numeric(res$fit[3]), times=nrow(data[data$ID==i, ])))
+    
+  }
+  
+  return(data.frame(ksb, Easb, ksb.sd, Easb.sd, R2sb, AICsb, llsb))
+  
+}
+
+dat.results<-cbind(dat.results, coupled(dat))
+
+```
+
+All data are visualized.
+
+```{r fig.height=35, fig.width=10, message=FALSE, warning=FALSE, fig.cap="Fig. S4: Correspondence between the measured respiration rates (blue points) and the respiration rates predicted by two equations (eq. 3 - solid line, eq. 4 - dashed, see Materials and Methods section for details). One panel corresponds to one observation."}
+
+ggplot(dat.results, aes(Temperature-273.15, Rsoil))+
+  geom_point(size=2,shape=21, alpha=0.5, fill="dodgerblue3", show.legend=F)+
+  geom_line(data=dat.results, aes(Temperature-273.15,Ctot*ks*exp(Eas/Temperature/8.314)), 
+            show.legend=F)+
+  geom_line(data=dat.results, aes(Temperature-273.15,Ctot*Biomass*ksb*exp(Easb/Temperature/8.314)), 
+            show.legend=F, lty=2)+
+  facet_wrap(~ID, scales="free", ncol = 6)+xlab("Temperature (°C)")+
+  ylab(expression(paste("Respiration rate (nmol ",g^{-1}~h^{-1}, ")")))+theme_bw()+
+  theme(axis.line.x = element_blank(),
+        axis.line.y =element_blank(),
+        plot.background=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size=10,colour="black"),
+        axis.text.x = element_text(size=10,colour="black"),
+        axis.title = element_text(size=10,colour="black"),
+        legend.text=element_text(size=10,colour="black"),
+        legend.title=element_blank(),
+        legend.justification=c(1,0), legend.position=c(0.99,0.01),
+        legend.key.size = unit(1,'lines'),
+        legend.background=element_rect(fill=NA, colour=NA),
+        strip.text.x = element_text(size=10),
+        strip.background = element_rect(colour="black", fill = "white"),
+        panel.spacing = unit(0.5, "lines"))
+```
+
+$E_{A}$ estimates are summarized in following table.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE, results='asis'}
+
+res<-subset(dat.results, !duplicated(Eas))
+
+t.a3<-data.frame(Minimum=c(summary(res$Eas)[1]/1000, summary(res$Easb)[1]/1000),
+                 ql=c(summary(res$Eas)[2]/1000, summary(res$Easb)[2]/1000),
+                 Median=c(summary(res$Eas)[3]/1000, summary(res$Easb)[3]/1000),
+                 Mean=c(summary(res$Eas)[4]/1000, summary(res$Easb)[4]/1000),
+                 qu=c(summary(res$Eas)[5]/1000, summary(res$Easb)[5]/1000),
+                 Maximum=c(summary(res$Eas)[6]/1000, summary(res$Easb)[6]/1000))
+
+rownames(t.a3)<-c("First order decay", "Multiplicative")
+
+
+kable(t.a3, digits = c(1), align = 'c', "html", booktabs=T, col.names = c('Minimum', 'Lower quartile', 'Median', 'Mean', 'Upper quartile', 'Maximum'), row.names=T, caption = "Table S3: Distribution of apparent temperature sensitivities of heterotrophic soil respiration rate among 129 unique observations. Apparent temperature sensitivity was estimated as $E_{A}$ parameter ($kJ~mol^{-1}$) of two different equations (eqs. 3 and 4 in Materials and Methods section).") %>% 
+  kable_styling(bootstrap_options = c("hover")) 
+
+```
+
+Both equations fit the data with different goodness. The goodness of fit for each observation is compared in following figure. 
+
+```{r echo=FALSE, fig.height=4, fig.width=6, message=FALSE, warning=FALSE, fig.cap="Coefficients of determination (R2) of the fits of equations 3 and 4 (see Materials and Methods for details) for individual observations (n=129). Solid black line denotes 1:1 correspondence. When the symbol is below the 1:1 line, first order decay equation fit the data better than multiplicative equation and vice versa."}
+
+r2<-dat.results
+r2$Legend<-ifelse(dat.results$R2s>dat.results$R2sb, "a", "b")
+ggplot(r2, aes(R2s, R2sb))+geom_point(size=2,shape=21, alpha=0.5,aes(fill=Legend), show.legend = F)+
+  geom_abline(intercept = 0, slope = 1, colour="black", lwd=0.5)+
+  xlab(expression(paste(R^{2}, " - First order")))+
+  ylab(expression(paste(R^{2}, " - Multiplicative")))+
+  scale_fill_manual(values = c("indianred3", "dodgerblue3"))+
+  theme_bw()+xlim(0,1)+ylim(0,1)+
+  theme(axis.line.x = element_blank(),
+        axis.line.y =element_blank(),
+        plot.background=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size=12,colour="black"),
+        axis.text.x = element_text(size=12,colour="black"),
+        axis.title = element_text(size=12,colour="black"),
+        legend.text=element_text(size=10,colour="black"),
+        legend.title=element_blank(),
+        legend.justification=c(1,0), legend.position=c(0.99,0.01),
+        legend.key.size = unit(1,'lines'),
+        legend.background=element_rect(fill=NA, colour=NA),
+        strip.text.x = element_text(size=10),
+        strip.background = element_rect(colour="black", fill = "white"),
+        panel.spacing = unit(0.5, "lines"))
+```
+
+Next, observations are divided into three categories defining direction of temperature-associated change of soil microbial biomass with temperature - "Increasing", "Decreasing", "Constant".
+
+
 
