@@ -31,6 +31,7 @@ library(DEoptim)
 library(emmeans)
 library(knitr)
 library(kableExtra)
+library(PerformanceAnalytics)
 
 dat<-read.csv("rsoil_tsensitivity_data11192018.csv")
 dat<-dat[order(dat$ID), ]
@@ -734,6 +735,7 @@ kable(t.a2, digits = c(2), align = 'c', "html", booktabs=T, col.names = c('AIC',
 To evaluate the effect of temperature-associated changes of microbial biomass on apparent temperature sensitivity of $R_{SOIL}$, activation energy parameter ($E_{A}$) of the Arrhenius equation is estimated for each observation separately. This is done for the first order decay equation and multiplicative equation.
 
 ```{r par estimates 1, message=FALSE, warning=FALSE, include=FALSE}
+
 first_order<-function(data){
   
   #list of unique observations
@@ -741,11 +743,11 @@ first_order<-function(data){
   
   #defining all variables to calculate
   #parameters
-  ks<-numeric()
+  logks<-numeric()
   Eas<-numeric()
   
   #standard errors
-  ks.sd<-numeric()
+  logks.sd<-numeric()
   Eas.sd<-numeric()
   
   #r.squared
@@ -759,38 +761,14 @@ first_order<-function(data){
   
   #creating function for parameters estimation
   estim<-function(fr){
-    #defining the objective function
-    est<-function(x){
-      
-      parnames<-c("ks", "Eas")
-      par<-x[1:length(parnames)]
-      
-      Ctot<-as.numeric(fr[, "Ctot"])
-      Temp<-as.numeric(fr[, "Temperature"])
-      
-      yhat<-Ctot*par[1]*exp(par[2]/Temp/8.314)
-      obs<-as.numeric(fr[, "Rsoil"])
-      
-      # SSres<-sum(((obs-yhat)^2), na.rm = T)
-      # SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
-      # Rsq<-1-(SSres/SStot)
-      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
-      # AIC<-4-2*ll
-      
-      return(-2*ll)
-      
-    }
     
     #defining the goodness of fit function
     goodness<-function(x){
       
-      parnames<-c("k", "Eas")
-      par<-x[1:length(parnames)]
-      
       Ctot<-as.numeric(fr[, "Ctot"])
       Temp<-as.numeric(fr[, "Temperature"])
       
-      yhat<-Ctot*par[1]*exp(par[2]/Temp/8.314)
+      yhat<-Ctot*exp(x[1])*exp(x[2]/Temp/8.314)
       obs<-as.numeric(fr[, "Rsoil"])
       
       SSres<-sum(((obs-yhat)^2), na.rm = T)
@@ -803,29 +781,23 @@ first_order<-function(data){
       
     }
     
-    #approximate parameter estimation is done by MCMC method
-    par_mcmc<-modMCMC(f=est, p=c(k=1e10, Eas=-50000),
-                      lower=c(k=1e-6, Eas=-3000000),
-                      upper=c(k=1e50, Eas=10000), niter=10000)
+    #estimation is done by linear regression
+    Ctot<-log(as.numeric(fr[, "Ctot"]))
+    Temp<-1/8.314/as.numeric(fr[, "Temperature"])
+    obs<-log(as.numeric(fr[, "Rsoil"]))
     
-    #nls estimation
-    Ctot<-as.numeric(fr[, "Ctot"])
-    Temp<-as.numeric(fr[, "Temperature"])
-    obs<-as.numeric(fr[, "Rsoil"])
-    
-    nls.out<-nls(obs~Ctot*ks*exp(Ea/8.314/Temp), start = list(ks=par_mcmc$bestpar[1],
-                                                             Ea=par_mcmc$bestpar[2]),
-                control = c(maxiter=1e6))
+    lmf<-lm(obs~Temp, offset = Ctot)
+    blmf<-sim(lmf, n.sim=10000)  
     
     #goodness of fit
-    fit<-goodness(coef(nls.out))
+    fit<-goodness(coef(lmf))
     
     #best parameters
-    p<-coef(nls.out)
-    names(p)<-c("ks", "Eas")
+    p<-coef(lmf)
+    names(p)<-c("logks", "Eas")
     
     #sd of parameters
-    p.sd<-summary(par_mcmc)[2,]
+    p.sd<-apply(coef(blmf), 2, sd)
     
     #return list with opt_par and par_prof
     estim_out<-list()
@@ -841,9 +813,9 @@ first_order<-function(data){
     
     res<-estim(fr=data[data$ID==i, ])
     
-    ks<-append(ks, rep(as.numeric(res$pars[1]), times=nrow(data[data$ID==i, ])))
+    logks<-append(logks, rep(as.numeric(res$pars[1]), times=nrow(data[data$ID==i, ])))
     Eas<-append(Eas, rep(as.numeric(res$pars[2]), times=nrow(data[data$ID==i, ])))
-    ks.sd<-append(ks.sd, rep(as.numeric(res$pars.sd[1]), times=nrow(data[data$ID==i, ])))
+    logks.sd<-append(logks.sd, rep(as.numeric(res$pars.sd[1]), times=nrow(data[data$ID==i, ])))
     Eas.sd<-append(Eas.sd, rep(as.numeric(res$pars.sd[2]), times=nrow(data[data$ID==i, ])))
     R2s<-append(R2s, rep(as.numeric(res$fit[1]), times=nrow(data[data$ID==i, ])))
     AICs<-append(AICs, rep(as.numeric(res$fit[2]), times=nrow(data[data$ID==i, ])))
@@ -851,7 +823,7 @@ first_order<-function(data){
     
     }
   
-  return(data.frame(ks, Eas, ks.sd, Eas.sd, R2s, AICs, lls))
+  return(data.frame(logks, Eas, logks.sd, Eas.sd, R2s, AICs, lls))
   
 }
 
@@ -867,11 +839,11 @@ coupled<-function(data){
   
   #defining all variables to calculate
   #parameters
-  ksb<-numeric()
+  logksb<-numeric()
   Easb<-numeric()
   
   #standard errors
-  ksb.sd<-numeric()
+  logksb.sd<-numeric()
   Easb.sd<-numeric()
   
   #r.squared
@@ -884,43 +856,16 @@ coupled<-function(data){
   llsb<-numeric()
   
   #creating function for parameters estimation
-  #creating function for parameters estimation
   estim<-function(fr){
-    
-    #defining the objective function
-    est<-function(x){
-      
-      parnames<-c("ksb", "Easb")
-      par<-x[1:length(parnames)]
-      
-      Ctot<-as.numeric(fr[, "Ctot"])
-      Cmic<-as.numeric(fr[, "Biomass"])
-      Temp<-as.numeric(fr[, "Temperature"])
-      
-      yhat<-Ctot*Cmic*par[1]*exp(par[2]/Temp/8.314)
-      obs<-as.numeric(fr[, "Rsoil"])
-      
-      # SSres<-sum(((obs-yhat)^2), na.rm = T)
-      # SStot<-sum(((obs-mean(obs, na.rm=T))^2), na.rm = T)
-      # Rsq<-1-(SSres/SStot)
-      ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
-      # AIC<-4-2*ll
-      
-      return(-2*ll)
-      
-    }
     
     #defining the goodness of fit function
     goodness<-function(x){
       
-      parnames<-c("ksb", "Easb")
-      par<-x[1:length(parnames)]
-      
       Ctot<-as.numeric(fr[, "Ctot"])
       Cmic<-as.numeric(fr[, "Biomass"])
       Temp<-as.numeric(fr[, "Temperature"])
       
-      yhat<-Ctot*Cmic*par[1]*exp(par[2]/Temp/8.314)
+      yhat<-Ctot*Cmic*exp(x[1])*exp(x[2]/Temp/8.314)
       obs<-as.numeric(fr[, "Rsoil"])
       
       SSres<-sum(((obs-yhat)^2), na.rm = T)
@@ -933,30 +878,24 @@ coupled<-function(data){
       
     }
     
-    #approximate parameter estimation is done by MCMC method
-    par_mcmc<-modMCMC(f=est, p=c(k=1e10, Eas=-50000),
-                      lower=c(k=1e-6, Eas=-3000000),
-                      upper=c(k=1e50, Eas=10000), niter=10000)
+    #estimation is done by linear regression
+    Ctot<-log(as.numeric(fr[, "Ctot"]))
+    Cmic<-log(as.numeric(fr[, "Biomass"]))
+    Temp<-1/8.314/as.numeric(fr[, "Temperature"])
+    obs<-log(as.numeric(fr[, "Rsoil"]))
     
-    #nls estimation
-    Ctot<-as.numeric(fr[, "Ctot"])
-    Cmic<-as.numeric(fr[, "Biomass"])
-    Temp<-as.numeric(fr[, "Temperature"])
-    obs<-as.numeric(fr[, "Rsoil"])
-    
-    nls.out<-nls(obs~Ctot*Cmic*k*exp(Ea/8.314/Temp), start = list(k=par_mcmc$bestpar[1],
-                                                             Ea=par_mcmc$bestpar[2]),
-                 control = c(maxiter=1e6, tol=1, minFactor=1e-10))
+    lmf<-lm(obs~Temp, offset = Ctot+Cmic)
+    blmf<-sim(lmf, n.sim=10000)  
     
     #goodness of fit
-    fit<-goodness(coef(nls.out))
+    fit<-goodness(coef(lmf))
     
     #best parameters
-    p<-coef(nls.out)
-    names(p)<-c("ksb", "Easb")
+    p<-coef(lmf)
+    names(p)<-c("logks", "Eas")
     
     #sd of parameters
-    p.sd<-summary(par_mcmc)[2,]
+    p.sd<-apply(coef(blmf), 2, sd)
     
     #return list with opt_par and par_prof
     estim_out<-list()
@@ -972,9 +911,9 @@ coupled<-function(data){
     
     res<-estim(fr=data[data$ID==i, ])
     
-    ksb<-append(ksb, rep(as.numeric(res$pars[1]), times=nrow(data[data$ID==i, ])))
+    logksb<-append(logksb, rep(as.numeric(res$pars[1]), times=nrow(data[data$ID==i, ])))
     Easb<-append(Easb, rep(as.numeric(res$pars[2]), times=nrow(data[data$ID==i, ])))
-    ksb.sd<-append(ksb.sd, rep(as.numeric(res$pars.sd[1]), times=nrow(data[data$ID==i, ])))
+    logksb.sd<-append(logksb.sd, rep(as.numeric(res$pars.sd[1]), times=nrow(data[data$ID==i, ])))
     Easb.sd<-append(Easb.sd, rep(as.numeric(res$pars.sd[2]), times=nrow(data[data$ID==i, ])))
     R2sb<-append(R2sb, rep(as.numeric(res$fit[1]), times=nrow(data[data$ID==i, ])))
     AICsb<-append(AICsb, rep(as.numeric(res$fit[2]), times=nrow(data[data$ID==i, ])))
@@ -982,7 +921,7 @@ coupled<-function(data){
     
   }
   
-  return(data.frame(ksb, Easb, ksb.sd, Easb.sd, R2sb, AICsb, llsb))
+  return(data.frame(logksb, Easb, logksb.sd, Easb.sd, R2sb, AICsb, llsb))
   
 }
 
@@ -996,10 +935,10 @@ All data are visualized.
 
 ggplot(dat.results, aes(Temperature-273.15, Rsoil))+
   geom_point(size=2,shape=21, alpha=0.5, fill="dodgerblue3", show.legend=F)+
-  geom_line(data=dat.results, aes(Temperature-273.15,Ctot*ks*exp(Eas/Temperature/8.314)), 
+  geom_line(aes(Temperature-273.15,Ctot*exp(logks)*exp(Eas/Temperature/8.314)), 
             show.legend=F)+
-  geom_line(data=dat.results, aes(Temperature-273.15,Ctot*Biomass*ksb*exp(Easb/Temperature/8.314)), 
-            show.legend=F, lty=2)+
+  geom_line(aes(Temperature-273.15,Ctot*Biomass*exp(logksb)*exp(Easb/Temperature/8.314)), 
+           show.legend=F, lty=2)+
   facet_wrap(~ID, scales="free", ncol = 6)+xlab("Temperature (°C)")+
   ylab(expression(paste("Respiration rate (nmol ",g^{-1}~h^{-1}, ")")))+theme_bw()+
   theme(axis.line.x = element_blank(),
@@ -1043,7 +982,7 @@ kable(t.a3, digits = c(1), align = 'c', "html", booktabs=T, col.names = c('Minim
 
 Both equations fit the data with different goodness. The goodness of fit for each observation is compared in following figure. 
 
-```{r echo=FALSE, fig.height=4, fig.width=6, message=FALSE, warning=FALSE, fig.cap="Coefficients of determination (R2) of the fits of equations 3 and 4 (see Materials and Methods for details) for individual observations (n=129). Solid black line denotes 1:1 correspondence. When the symbol is below the 1:1 line, first order decay equation fit the data better than multiplicative equation and vice versa."}
+```{r echo=FALSE, fig.height=4, fig.width=6, message=FALSE, warning=FALSE, fig.cap="Fig. S5: Coefficients of determination (R2) of the fits of equations 3 and 4 (see Materials and Methods for details) for individual observations (n=129). Solid black line denotes 1:1 correspondence. When the symbol is below the 1:1 line, first order decay equation fit the data better than multiplicative equation and vice versa."}
 
 r2<-dat.results
 r2$Legend<-ifelse(dat.results$R2s>dat.results$R2sb, "a", "b")
@@ -1071,7 +1010,467 @@ ggplot(r2, aes(R2s, R2sb))+geom_point(size=2,shape=21, alpha=0.5,aes(fill=Legend
         panel.spacing = unit(0.5, "lines"))
 ```
 
-Next, observations are divided into three categories defining direction of temperature-associated change of soil microbial biomass with temperature - "Increasing", "Decreasing", "Constant".
+Next, observations are divided into three categories defining direction of temperature-associated change of soil microbial biomass - "Increasing", "Decreasing", "Constant". Relationship between microbial biomass and temperature is fitted as a linearized form of Arrhenius equation. 
+Categories are defined based on the estimated $E_{A}$ parameter. When the 95% confidence interval of the $E_{A}$ parameter is negative, microbial biomass is considered increasing with temperature. In opposite case, microbial biomass is considered decreasing with temperature. When the 95% confidence interval includes zero, microbial biomass is considered constant.
+Observation 31 - 34 are treated separately, because microbial biomass increases with temperature first and then decreases with the temperature. Results are visualized.
+
+```{r Biomass plot, echo=FALSE, fig.height=35, fig.width=10, fig.cap="Fig. S6: Relationship between the microbial biomass carbon and temperature. Solid lines represent fit of linearized Arrhenius equation. Red symbols and lines denote decreasing trend of microbial biomass with temperature, green symbols and lines represent increasing trend and grey symbols and lines denote no or inconsistent relationship between the temperature and microbial biomass carbon (thus defined as "Constant"). ", message=FALSE, warning=FALSE}
+b_change<-function(data){
+  
+  #list of unique observations
+  IDs<-unique(data$ID)
+  
+  #defining all variables to calculate
+  #parameters
+  logkmic<-numeric()
+  Ea.mic<-numeric()
+  
+  #standard errors
+  Ea.mic.l<-numeric()
+  Ea.mic.u<-numeric()
+  
+  #creating function for parameters estimation
+  estim<-function(fr){
+  
+    Temp<-1/8.314/as.numeric(fr[, "Temperature"])
+    obs<-log(as.numeric(fr[, "Biomass"]))
+      
+    lm1<-lm(obs~Temp)
+    
+    #best parameters
+    p<-coef(lm1)
+    
+    
+    #sd of parameters
+    p.sd<-confint(lm1)[c(2,4)]
+    
+    #return list with opt_par and par_prof
+    estim_out<-list()
+    estim_out$pars<-p
+    estim_out$pars.sd<-p.sd
+    
+    
+    return(estim_out)
+  }
+  
+  #do the calculation
+  for(i in IDs){
+    
+    res<-estim(fr=data[data$ID==i, ])
+    
+    logkmic<-append(logkmic, rep(as.numeric(res$pars[1]), times=nrow(data[data$ID==i, ])))
+    Ea.mic<-append(Ea.mic, rep(as.numeric(res$pars[2]), times=nrow(data[data$ID==i, ])))
+    Ea.mic.l<-append(Ea.mic.l, rep(as.numeric(res$pars.sd[1]), times=nrow(data[data$ID==i, ])))
+    Ea.mic.u<-append(Ea.mic.u, rep(as.numeric(res$pars.sd[2]), times=nrow(data[data$ID==i, ])))
+    
+    
+  }
+  
+  Category<-character()
+  
+  for(i in 1:length(Ea.mic)){
+      if(Ea.mic[i]<0 & Ea.mic.u[i]<0){#
+        Category<-append(Category, "Increasing")
+      }else{
+        if(Ea.mic[i]>0 & Ea.mic.l[i]>0){#
+          Category<-append(Category, "Decreasing")
+        }else{
+          Category<-append(Category, "Constant")
+        }
+      }
+    }
+  
+  
+  return(data.frame(logkmic, Ea.mic, Category))
+  
+}
+
+dat.results2<-cbind(dat.results, b_change(dat))
+
+#31
+lm31<-lm(log(Biomass)~Temp, dat.results2[dat.results2$ID==31, ])
+lm31o<-segmented(lm31, seg.Z = ~Temp)
 
 
 
+dat.results2[dat.results2$ID==31, "Category"]<-ifelse(dat.results2[dat.results2$ID==31, "Temp"]>=lm31o$psi[2], "Increasing", "Decreasing")
+
+dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Increasing"),
+             c("logkmic", "Ea.mic")]<-
+  b_change(dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Increasing"), ])[, c(1,2)]
+
+dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Decreasing"),
+             c("logkmic", "Ea.mic")]<-
+  b_change(dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Decreasing"), ])[, c(1,2)]
+
+dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Increasing"),
+             c("logks", "Eas", "logks.sd", "Eas.sd", "R2s", "AICs", "lls")]<-
+  first_order(dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Increasing"), ])
+
+
+dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Decreasing"),
+             c("logks", "Eas", "logks.sd", "Eas.sd", "R2s", "AICs", "lls")]<-
+  first_order(dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Decreasing"), ])
+
+dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Increasing"),
+             c("logksb", "Easb", "logksb.sd", "Easb.sd", "R2sb", "AICsb", "llsb")]<-
+  coupled(dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Increasing"), ])
+
+
+dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Decreasing"),
+             c("logksb", "Easb", "logksb.sd", "Easb.sd", "R2sb", "AICsb", "llsb")]<-
+  coupled(dat.results2[(dat.results2$ID==31 & dat.results2$Category=="Decreasing"), ])
+
+#32
+lm32<-lm(log(Biomass)~Temp, dat.results2[dat.results2$ID==32, ])
+lm32o<-segmented(lm32, seg.Z = ~Temp)
+
+
+
+dat.results2[dat.results2$ID==32, "Category"]<-ifelse(dat.results2[dat.results2$ID==32, "Temp"]>=lm32o$psi[2], "Constant", "Decreasing")
+
+dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Constant"),
+             c("logkmic", "Ea.mic")]<-
+  b_change(dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Constant"), ])[, c(1,2)]
+
+dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Decreasing"),
+             c("logkmic", "Ea.mic")]<-
+  b_change(dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Decreasing"), ])[, c(1,2)]
+
+dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Constant"),
+             c("logks", "Eas", "logks.sd", "Eas.sd", "R2s", "AICs", "lls")]<-
+  first_order(dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Constant"), ])
+
+
+dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Decreasing"),
+             c("logks", "Eas", "logks.sd", "Eas.sd", "R2s", "AICs", "lls")]<-
+  first_order(dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Decreasing"), ])
+
+dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Constant"),
+             c("logksb", "Easb", "logksb.sd", "Easb.sd", "R2sb", "AICsb", "llsb")]<-
+  coupled(dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Constant"), ])
+
+
+dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Decreasing"),
+             c("logksb", "Easb", "logksb.sd", "Easb.sd", "R2sb", "AICsb", "llsb")]<-
+  coupled(dat.results2[(dat.results2$ID==32 & dat.results2$Category=="Decreasing"), ])
+
+#33
+lm33<-lm(log(Biomass)~Temp, dat.results2[dat.results2$ID==33, ])
+lm33o<-segmented(lm33, seg.Z = ~Temp)
+
+
+
+dat.results2[dat.results2$ID==33, "Category"]<-ifelse(dat.results2[dat.results2$ID==33, "Temp"]>=lm33o$psi[2], "Increasing", "Decreasing")
+
+dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Increasing"),
+             c("logkmic", "Ea.mic")]<-
+  b_change(dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Increasing"), ])[, c(1,2)]
+
+dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Decreasing"),
+             c("logkmic", "Ea.mic")]<-
+  b_change(dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Decreasing"), ])[, c(1,2)]
+
+dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Increasing"),
+             c("logks", "Eas", "logks.sd", "Eas.sd", "R2s", "AICs", "lls")]<-
+  first_order(dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Increasing"), ])
+
+
+dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Decreasing"),
+             c("logks", "Eas", "logks.sd", "Eas.sd", "R2s", "AICs", "lls")]<-
+  first_order(dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Decreasing"), ])
+
+dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Increasing"),
+             c("logksb", "Easb", "logksb.sd", "Easb.sd", "R2sb", "AICsb", "llsb")]<-
+  coupled(dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Increasing"), ])
+
+
+dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Decreasing"),
+             c("logksb", "Easb", "logksb.sd", "Easb.sd", "R2sb", "AICsb", "llsb")]<-
+  coupled(dat.results2[(dat.results2$ID==33 & dat.results2$Category=="Decreasing"), ])
+
+#34
+lm34<-lm(log(Biomass)~Temp, dat.results2[dat.results2$ID==34, ])
+lm34o<-segmented(lm34, seg.Z = ~Temp)
+
+
+
+dat.results2[dat.results2$ID==34, "Category"]<-ifelse(dat.results2[dat.results2$ID==34, "Temp"]>0.0004102986, "Increasing", "Decreasing")
+
+dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Increasing"),
+             c("logkmic", "Ea.mic")]<-
+  b_change(dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Increasing"), ])[, c(1,2)]
+
+dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Decreasing"),
+             c("logkmic", "Ea.mic")]<-
+  b_change(dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Decreasing"), ])[, c(1,2)]
+
+dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Increasing"),
+             c("logks", "Eas", "logks.sd", "Eas.sd", "R2s", "AICs", "lls")]<-
+  first_order(dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Increasing"), ])
+
+
+dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Decreasing"),
+             c("logks", "Eas", "logks.sd", "Eas.sd", "R2s", "AICs", "lls")]<-
+  first_order(dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Decreasing"), ])
+
+dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Increasing"),
+             c("logksb", "Easb", "logksb.sd", "Easb.sd", "R2sb", "AICsb", "llsb")]<-
+  coupled(dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Increasing"), ])
+
+
+dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Decreasing"),
+             c("logksb", "Easb", "logksb.sd", "Easb.sd", "R2sb", "AICsb", "llsb")]<-
+  coupled(dat.results2[(dat.results2$ID==34 & dat.results2$Category=="Decreasing"), ])
+
+
+ggplot(dat.results2, aes(Temperature-273.15, Biomass))+
+  geom_point(size=2,shape=21, alpha=0.5, aes(fill=Category))+
+  geom_line(data=dat.results2, aes(Temperature-273.15, exp(logkmic)*exp(Ea.mic/Temperature/8.314), colour=Category))+
+  facet_wrap(~ID, scales="free", ncol = 6)+xlab("Temperature (°C)")+
+  scale_fill_manual(values = c("grey60", "brown1", "seagreen3"))+
+  scale_colour_manual(values = c("grey60", "brown1", "seagreen3"))+
+  ylab(expression(paste("Microbial biomass ( ",mu, "mol ",g^{-1}, ")")))+theme_bw()+
+  theme(axis.line.x = element_blank(),
+        axis.line.y =element_blank(),
+        plot.background=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size=10,colour="black"),
+        axis.text.x = element_text(size=10,colour="black"),
+        axis.title = element_text(size=10,colour="black"),
+        legend.text=element_text(size=10,colour="black"),
+        legend.title=element_blank(),
+        legend.justification=c(1,0), legend.position=c(0.99,0.01),
+        legend.key.size = unit(1,'lines'),
+        legend.background=element_rect(fill=NA, colour=NA),
+        strip.text.x = element_text(size=10),
+        strip.background = element_rect(colour="black", fill = "white"),
+        panel.spacing = unit(0.5, "lines"))
+
+
+
+```
+
+Effect of defined categories on temperature sensitivity of $R_{SOIL}$ is analyzed by generalized linear regression. Every $E_{A}$ estimate is weighted by its inverse normal distribution variance. Pairwise comparison between categories is done by TukeyHSD test. Results are visualized. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S7: Temperature sensitivities of three different categories defining the observed trend of the microbial biomass change along the increasing temperature (Decreasing, Constant, Increasing). Temperature sensitivity was estimated as an activation energy parameter ($E_{A}$) of eq. 3 (A) and 4 (B). Grey points represent individual $E_{A}$ estimates (estimated for each observation separately). Grey error bars represent the standard deviation of the estimate. Blue points represent the mean $E_{A}$ estimated for each category by generalized linear regression. Corresponding error bars determine 95% confidence intervals of the estimate. Letters above the symbols summarize results of TukeyHSD post hoc pairwise comparison between categories. Temperature sensitivities of all categories expressed as a $Q_{10}$ parameter (in temperature interval 10 - 20 °C) are reported below the symbols."}
+ea_boxplot<-dat.results2[!duplicated(dat.results2$Eas),]
+lm.categories<-lm(Eas~Category, weights = 1/Eas.sd^2, 
+                  ea_boxplot)
+
+# summary(lm.categories)
+# anova(lm.categories)
+# emmeans(lm.categories, pairwise~Category)
+
+# coef(lm.categories)
+# exp(coef(lm.categories)[1]/8.314*(1/293.15-1/283.15))
+
+lbd<-paste("Q[10] == ",round(exp((coef(lm.categories)[1]+coef(lm.categories)[2])/8.314*(1/293.15-1/283.15)), 1))
+lbc<-paste("Q[10] == ",round(exp(coef(lm.categories)[1]/8.314*(1/293.15-1/283.15)), 1))
+lbi<-paste("Q[10] == ",round(exp((coef(lm.categories)[1]+coef(lm.categories)[3])/8.314*(1/293.15-1/283.15)), 1))
+
+ea_boxplot$Category<-factor(ea_boxplot$Category, levels = c("Decreasing", "Constant", "Increasing"))
+ea_stat<-data.frame(Eas=c(coef(lm.categories)[1],
+                            coef(lm.categories)[1]+coef(lm.categories)[2],
+                            coef(lm.categories)[1]+coef(lm.categories)[3]),
+                     Eas.l=c(confint(lm.categories)[1,1],
+                              coef(lm.categories)[1]+confint(lm.categories, level = 0.99)[2,1],
+                              coef(lm.categories)[1]+confint(lm.categories, level = 0.99)[3,1]),
+                     Eas.u=c(confint(lm.categories)[1,2],
+                              coef(lm.categories)[1]+confint(lm.categories, level = 0.99)[2,2],
+                              coef(lm.categories)[1]+confint(lm.categories, level = 0.99)[3,2]),
+                     Category=c("Constant", "Decreasing", "Increasing"))
+
+#6 to 6 inches when exported to pdf
+ea1<-ggplot(ea_boxplot, aes(Category, Eas/1000))+
+  geom_pointrange(aes(ymin=Eas/1000-Eas.sd/1000, ymax=Eas/1000+Eas.sd/1000),position = position_jitter(width = 0.33),size=0.5, fill="grey60", shape=21,alpha=0.4)+
+  #stat_summary(size = 1,fun.y = "median",fun.ymin = min, fun.ymax = max,fill="dodgerblue3", shape=21)+
+  geom_point(data=ea_stat, size=6, fill="dodgerblue3", shape=21, aes(Category, Eas/1000))+
+  geom_errorbar(data=ea_stat, aes(ymin=Eas.l/1000, ymax=Eas.u/1000), lwd=1, width=0.01)+
+  ylab(expression(paste(italic(E[A])~(kJ~mol^{-1}))))+
+  theme_bw()+scale_y_continuous(limits = c(-310,150), expand = c(0, 0))+
+  theme(axis.line.x = element_blank(),
+        axis.line.y =element_blank(),
+        plot.background=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size=14,colour="black"),
+        axis.text.x = element_text(size=14,colour="black"),
+        axis.title = element_text(size=14,colour="black"),
+        axis.title.x = element_blank(),
+        legend.text=element_text(size=10,colour="black"),
+        legend.title=element_blank(),
+        legend.justification=c(1,0), legend.position=c(0.99,0.01),
+        legend.key.size = unit(1,'lines'),
+        legend.background=element_rect(fill=NA, colour=NA),
+        strip.text.x = element_text(size=10),
+        strip.background = element_rect(colour="black", fill = "white"),
+        panel.spacing = unit(0.25, "lines"),
+        plot.title=element_text(size=16, face="bold", hjust=-0.05))+
+  annotate("text", label="a", 1, 125, size=6)+
+  annotate("text", label="b", 2, 125, size=6)+
+  annotate("text", label="b", 3, 125, size=6)+
+  annotate("text", label=lbd, 1, y=c(-290), size=4.5, parse=T)+
+  annotate("text", label=lbc, 2, y=c(-290), size=4.5, parse=T)+
+  annotate("text", label=lbi, 3, y=c(-290), size=4.5, parse=T)+
+  ggtitle("A)")
+
+
+lm.categories2<-lm(Easb~Category, weights = 1/Easb.sd^2, 
+                  ea_boxplot)
+
+# summary(lm.categories2)
+# anova(lm.categories2)
+# emmeans(lm.categories2, pairwise~Category)
+# 
+# coef(lm.categories2)
+# exp(coef(lm.categories2)[1]/8.314*(1/293.15-1/283.15))
+
+lbc2<-paste("Q[10] == ",round(exp((coef(lm.categories2)[1]+coef(lm.categories2)[2])/8.314*(1/293.15-1/283.15)), 1))
+lbd2<-paste("Q[10] == ",round(exp(coef(lm.categories2)[1]/8.314*(1/293.15-1/283.15)), 1))
+lbi2<-paste("Q[10] == ",round(exp((coef(lm.categories2)[1]+coef(lm.categories2)[3])/8.314*(1/293.15-1/283.15)), 1))
+
+ea_boxplot$Category<-factor(ea_boxplot$Category, levels = c("Decreasing", "Constant", "Increasing"))
+ea_stat2<-data.frame(Easb=c(coef(lm.categories2)[1],
+                     coef(lm.categories2)[1]+coef(lm.categories2)[2],
+                     coef(lm.categories2)[1]+coef(lm.categories2)[3]),
+                     Easb.l=c(confint(lm.categories2)[1,1],
+                                coef(lm.categories2)[1]+confint(lm.categories2, level=0.99)[2,1],
+                                coef(lm.categories2)[1]+confint(lm.categories2, level=0.99)[3,1]),
+                     Easb.u=c(confint(lm.categories2)[1,2],
+                              coef(lm.categories2)[1]+confint(lm.categories2, level=0.99)[2,2],
+                              coef(lm.categories2)[1]+confint(lm.categories2, level=0.99)[3,2]),
+                     Category=c("Decreasing", "Constant", "Increasing"))
+
+ea2<-ggplot(ea_boxplot, aes(Category, Easb/1000))+
+  geom_pointrange(aes(ymin=Easb/1000-Easb.sd/1000, ymax=Easb/1000+Easb.sd/1000),position = position_jitter(width = 0.33),size=0.5, fill="grey60", shape=21,alpha=0.4)+
+  #stat_pointrange(size = 1,aes(y),fill="dodgerblue3", shape=21)+
+  geom_point(data=ea_stat2, size=6, fill="dodgerblue3", shape=21, aes(Category, Easb/1000))+
+  geom_errorbar(data=ea_stat2, aes(ymin=Easb.l/1000, ymax=Easb.u/1000), lwd=1, width=0.01)+
+  ylab(expression(paste(italic(E[A])~(kJ~mol^{-1}))))+
+  theme_bw()+scale_y_continuous(limits = c(-310,150), expand = c(0, 0))+
+  theme(axis.line.x = element_blank(),
+        axis.line.y =element_blank(),
+        plot.background=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(size=14,colour="black"),
+        axis.title = element_text(size=14,colour="black"),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.text=element_text(size=10,colour="black"),
+        legend.title=element_blank(),
+        legend.justification=c(1,0), legend.position=c(0.99,0.01),
+        legend.key.size = unit(1,'lines'),
+        legend.background=element_rect(fill=NA, colour=NA),
+        strip.text.x = element_text(size=10),
+        strip.background = element_rect(colour="black", fill = "white"),
+        panel.spacing = unit(0.25, "lines"),
+        plot.title=element_text(size=16, face="bold", hjust=-0.05),
+        plot.margin=unit(c(0.075, 0.8, 0.075, 0.075), "in"))+
+  annotate("text", label="a", 1, 125, size=6)+
+  annotate("text", label="a", 2, 125, size=6)+
+  annotate("text", label="a", 3, 125, size=6)+
+  annotate("text", label=lbd2, 1, y=c(-290), size=4.5, parse=T)+
+  annotate("text", label=lbc2, 2, y=c( -290), size=4.5, parse=T)+
+  annotate("text", label=lbi2, 3, y=c(-290), size=4.5, parse=T)+
+  ggtitle("B)")
+
+grid.arrange(ea1, ea2, ncol=2)
+
+```
+
+##Supplementary analyses
+Across all observations, 15 different equations were fitted and their goodness of fit was compared by AIC. Following equations were used:
+
+[1] $R_{SOIL}~=~\alpha~+~\beta~\times~C_{S}$
+
+[2] $R_{SOIL}~=~\alpha~+~\beta~\times~C_{MB}$
+
+[3] $R_{SOIL}~=~k~\times~C_{S}~\times~C_{MB}$
+
+[4] $R_{SOIL}~=~V_{MAX}~\times~C_{S}~\times~C_{MB}~\times~\frac{1}{K_{M}~+~C_{S}}$
+
+[5] $R_{SOIL}~=~V_{MAX}~\times~DOC~\times~C_{MB}~\times~\frac{1}{K_{M}~+DOC}$
+
+[6] $R_{SOIL}~=~V_{MAX}~\times~C_{S}~\times~C_{MB}~\times~\frac{1}{K_{M}~+C_{S}}~\times~(1~-~CUE)$
+
+where 
+
+$CUE~=~\emptyset~\times~(\frac{N:C_{S}}{N:C_{MB}})^{\tau}$
+
+[7] $R_{SOIL}~=~A~\times~e^{\frac{E_{A}}{R~\times~T}}$
+
+[8] $R_{SOIL}~=~k~\times~C_{S}~\times~e^{\frac{E_{A}}{R~\times~T}}$
+
+[9] $R_{SOIL}~=~k~\times~C_{S}~\times~C_{MB}~\times~e^{\frac{E_{A}}{R~\times~T}}$
+
+[10] $R_{SOIL}~=~C_{S}~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K_{M}~+~C_{S}}$
+
+[11] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K_{M}~+~DOC}$
+
+[12] $R_{SOIL}~=~C_{S}~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{R~\times~T}}~+~C_{S}}$
+
+[13] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{R~\times~T}}~+~DOC}$
+
+[14] $R_{SOIL}~=~C_{S}~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{R~\times~T}}~+~C_{S}}~\times~[1~-~CUE_{0}~-~\omega~(T~-~273.15)]$
+
+[15] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{R~\times~T}}~+~DOC}~\times~[1~-~CUE_{0}~-~\omega~(T~-~273.15)]$
+
+Symbols used in all equations are explained in Supplemntary Table 1.
+
+```{r}
+source("./Global_Eqs/ctot_global.R")
+eq1<-ctot_global(dat)
+source("./Global_Eqs/cmic_global.R")
+eq2<-cmic_global(dat)
+source("./Global_Eqs/simple_global.R")
+eq3<-simple_global(dat)
+source("./Global_Eqs/monod_global1.R")
+eq4<-monod_global1(dat)
+source("./Global_Eqs/monod_global2.R")
+eq5<-monod_global2(dat[!is.na(dat$DOC), ])
+source("./Global_Eqs/monod2_global.R")
+eq6<-monod2_global(dat[!is.na(dat$CNs), ])
+source("./Global_Eqs/nic_global.R")
+eq7<-nic_global(dat)
+source("./Global_Eqs/first_global.R")
+eq8<-first_global(dat)
+source("./Global_Eqs/coupled_global.R")
+eq9<-coupled_global(dat)
+source("./Global_Eqs/monod_Vmax.R")
+eq10<-monod_Vmax(dat)
+source("./Global_Eqs/monod_Vmax2.R")
+eq11<-monod_Vmax2(dat[!is.na(dat$DOC), ])
+source("./Global_Eqs/monod_VmaxKm.R")
+eq12<-monod_VmaxKm(dat)
+source("./Global_Eqs/monod_VmaxKm2.R")
+eq13<-monod_VmaxKm2(dat[!is.na(dat$DOC), ])
+source("./Global_Eqs/monod_VmaxKmCUE.R")
+eq14<-monod_VmaxKmCUE(dat)
+source("./Global_Eqs/monod_VmaxKmCUE2.R")
+eq15<-monod_VmaxKmCUE2(dat[!is.na(dat$DOC), ])
+
+```
+
+
+```{r}
+cor1<-dat[,c(2,4,6, 7, 9, 11, 13, 16, 22)]
+cor1[,c(4, 5, 6, 7)]<-log(cor1[,c(4, 5, 6, 7)])
+chart.Correlation(cor1, histogram = T, pch=19)
+
+```
+
+```{r}
+
+
+cor2<-ea_boxplot[,c(4, 6, 10, 14, 16, 22, 25, 39)]
+chart.Correlation(cor2, histogram = T, pch=19)
+
+ggplot(dat.results2[dat.results2$Ea.mic<400000, ], aes((Eas-Easb)/1000, Ea.mic/1000))+geom_point()
+
+
+
+```
