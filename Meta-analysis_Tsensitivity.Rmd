@@ -1419,9 +1419,9 @@ $CUE~=~\emptyset~\times~(\frac{N:C_{S}}{N:C_{MB}})^{\tau}$
 
 [15] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{R~\times~T}}~+~DOC}~\times~[1~-~CUE_{0}~-~\omega~(T~-~273.15)]$
 
-Symbols used in all equations are explained in Supplemntary Table 1.
+Symbols used in equations are explained in Supplemntary Table 1.
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 source("./Global_Eqs/ctot_global.R")
 eq1<-ctot_global(dat)
 source("./Global_Eqs/cmic_global.R")
@@ -1453,10 +1453,35 @@ eq14<-monod_VmaxKmCUE(dat)
 source("./Global_Eqs/monod_VmaxKmCUE2.R")
 eq15<-monod_VmaxKmCUE2(dat[!is.na(dat$DOC), ])
 
+t.a4<-data.frame(AIC=c(eq1[["AIC"]], eq2[["AIC"]],eq3[["AIC"]],
+                       eq4[["AIC"]],eq5[["AIC"]],eq6[["AIC"]],
+                       eq7[["AIC"]],eq8[["AIC"]],eq9[["AIC"]],
+                       eq10[["AIC"]],eq11[["AIC"]],eq12[["AIC"]],
+                       eq13[["AIC"]],eq14[["AIC"]],eq15[["AIC"]]),
+                 R2=c(eq1[["R2"]], eq2[["R2"]],eq3[["R2"]],
+                       eq4[["R2"]],eq5[["R2"]],eq6[["R2"]],
+                       eq7[["R2"]],eq8[["R2"]],eq9[["R2"]],
+                       eq10[["R2"]],eq11[["R2"]],eq12[["R2"]],
+                       eq13[["R2"]],eq14[["R2"]],eq15[["R2"]]),
+                 dAIC=c(eq1[["AIC"]]-eq7[["AIC"]], eq2[["AIC"]]-eq7[["AIC"]],eq3[["AIC"]]-eq7[["AIC"]],
+                       eq4[["AIC"]]-eq7[["AIC"]],NA,NA,
+                       eq7[["AIC"]]-eq7[["AIC"]],eq8[["AIC"]]-eq7[["AIC"]],eq9[["AIC"]]-eq7[["AIC"]],
+                       eq10[["AIC"]]-eq7[["AIC"]],NA,eq12[["AIC"]]-eq7[["AIC"]],
+                       NA,eq14[["AIC"]]-eq7[["AIC"]],NA))
+
+options(knitr.kable.NA = '')
+rownames(t.a3)<-c("First order decay", "Multiplicative")
+
+
+kable(t.a4, digits = c(0,2,0), align = 'c', "html", booktabs=T, col.names = c('AIC', '$\\R^{2}$', '$\\Delta~AIC$'), row.names=T, caption = "Table S4: Goodness of fit of 15 different equations. Goodness of fit is expressed as Akaike Information Criterion (AIC) and coefficient of determination ($R^{2}$). The difference between AIC of the simplest equation 7 and other equations are reported. Rows with red background represents equations including dissolved organic carbon (DOC) or total organic carbon to nitrogen ratio as an explanatory variable. Because both variables were not reported in all studies, respective equations were fitted on the subset of the data and thus, the AIC is lower and cannot be directly compared with equation 7.") %>% 
+  kable_styling(bootstrap_options = c("hover")) %>%
+  row_spec(c(5,6,11,13,15), bold = T, color = "white", background = "#D7261E")
+
+
 ```
 
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Correlation matrix of all variables extracted from original studies (CNs - total organic carbon to nitrogen ratio, ). "}
 cor1<-dat[,c(2,4,6, 7, 9, 11, 13, 16, 22)]
 cor1[,c(4, 5, 6, 7)]<-log(cor1[,c(4, 5, 6, 7)])
 chart.Correlation(cor1, histogram = T, pch=19)
