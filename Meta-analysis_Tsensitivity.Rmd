@@ -1069,10 +1069,10 @@ b_change<-function(data){
   Category<-character()
   
   for(i in 1:length(Ea.mic)){
-      if(Ea.mic[i]<0 & Ea.mic.u[i]<0){#
+      if(Ea.mic[i]<0 & Ea.mic.u[i]<0){
         Category<-append(Category, "Increasing")
       }else{
-        if(Ea.mic[i]>0 & Ea.mic.l[i]>0){#
+        if(Ea.mic[i]>0 & Ea.mic.l[i]>0){
           Category<-append(Category, "Decreasing")
         }else{
           Category<-append(Category, "Constant")
@@ -1481,21 +1481,48 @@ kable(t.a4, digits = c(0,2,0), align = 'c', "html", booktabs=T, col.names = c('A
 ```
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Correlation matrix of all variables extracted from original studies (CNs - total organic carbon to nitrogen ratio, ). "}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Correlation matrix of all variables extracted from original studies (CNs - total organic carbon to nitrogen ratio, Rsoil - heterotrophic soil respiration rate, Ctot - total soil organic carbon, DOC - dissolved organic carbon, WHC - water holding capacity). "}
 cor1<-dat[,c(2,4,6, 7, 9, 11, 13, 16, 22)]
 cor1[,c(4, 5, 6, 7)]<-log(cor1[,c(4, 5, 6, 7)])
 chart.Correlation(cor1, histogram = T, pch=19)
 
 ```
 
-```{r}
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="The difference between between the $E_{A}$ parameters estimated for first order decay and multiplicative equation ($\Delta~E_{A}$) as eplained be the temperature sensitivity of microbial biomass ($E_{A-Biomass}$. Grey solid line represents 1:1 relationship. Different colours denote three different categories of microbial biomass response to temperature (Increasing, Decreasing and Constant). )"}
+
+ggplot(dat.results2, aes(Ea.mic/1000, (Eas-Easb)/1000))+geom_point(size=6, shape=21, aes(fill=Category))+
+  geom_hline(yintercept = 0)+geom_vline(xintercept = 0)+theme_bw()+xlim(-100, 200)+ylim(-100, 200)+
+  geom_abline(intercept = 0, slope=1, colour="grey", lwd=1)+scale_fill_manual(values = c("grey60", "brown1", "seagreen3"))+
+  theme(axis.line.x = element_blank(),
+        axis.line.y =element_blank(),
+        plot.background=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size=14,colour="black"),
+        axis.text.x = element_text(size=14,colour="black"),
+        axis.title = element_text(size=14,colour="black"),
+        legend.text=element_text(size=10,colour="black"),
+        legend.title=element_blank(),
+        legend.justification=c(1,0), legend.position=c(0.99,0.01),
+        legend.key.size = unit(1,'lines'),
+        legend.background=element_rect(fill=NA, colour=NA),
+        strip.text.x = element_text(size=10),
+        strip.background = element_rect(colour="black", fill = "white"),
+        panel.spacing = unit(0.25, "lines"),
+        plot.title=element_text(size=16, face="bold", hjust=-0.05),
+        plot.margin=unit(c(0.075, 0.8, 0.075, 0.075), "in"))+
+  xlab(expression(paste(italic(E[A-Biomass])~(kJ~mol^{-1}))))+
+  ylab(expression(paste(Delta~italic(E[A])~(kJ~mol^{-1}))))
+  
+
+```
 
 
-cor2<-ea_boxplot[,c(4, 6, 10, 14, 16, 22, 25, 39)]
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Correlation between the activation energy parameter of the first order decay (Eas) or multiplicative equation (Easb) and selected soil variables (CNs - total organic carbon to nitrogen ratio, Ctot - total soil organic carbon, DOC - dissolved organic carbon, WHC - water holding capacity, Ea.mic - temperature sensitivity of microbial biomass). "}
+
+cor2<-dat.results2[,c(25, 32, 4, 6, 9, 11, 13, 16, 22, 39)]
 chart.Correlation(cor2, histogram = T, pch=19)
-
-ggplot(dat.results2[dat.results2$Ea.mic<400000, ], aes((Eas-Easb)/1000, Ea.mic/1000))+geom_point()
-
 
 
 ```
