@@ -292,7 +292,7 @@ kable(t.a1, digits = c(2), align = 'c', "html", booktabs=T, col.names = c('Equat
 
 Results are further compared graphically. 
 
-```{r Fig. 1 of the main text, echo=FALSE, fig.cap="Fig. S1: Goodness of correspondence between measured and predicted soil respiration rate. The respiration rate was predicted by two different equations (eq. 3 in the main text - First order and eq. 4 in the main text - Multiplicative equation, see Materials and Methods for details) with the Arrhenius type temperature response function. Black dashed line represents 1:1 correspondence. Coefficient of determination ($R^{2}$) is reported for each equation.  Both axis are on the logarithmic scale. ", fig.height=6, fig.width=12, message=FALSE, warning=FALSE}
+```{r Fig. 1 of the main text, echo=FALSE, fig.cap="Fig. S1: Goodness of correspondence between measured and predicted soil respiration rate across all observations. The respiration rate was predicted by two different equations; first order decay and multiplicative equation with Arrhenius type temperature response function (eqs. 3 and 4 in Materials and Methods section). Black dashed line represents 1:1 correspondence. Coefficient of determination ($R^{2}$) is reported for each equation.  Both axis are on the logarithmic scale.", fig.height=6, fig.width=12, message=FALSE, warning=FALSE}
 ovp1<-dat[, c("Rsoil", "Biomass", "Ctot", "Temperature")]
 ovp1$Legend<-c("First order")
 ovp1$Pred<-ovp1$Ctot*first_order_global[1]*exp(first_order_global[2]/8.314/ovp1$Temperature)
@@ -340,7 +340,7 @@ ggplot(ovp, aes(Rsoil, Pred))+geom_point(size=2,shape=21, alpha=0.5,fill="dodger
 
 Next, presence of significanr breakpoints in temperature response of heterotrophic soil respiration rate ($R_{SOIL}$) are looked for using segmented linear regression. The same analysis is conducted with scaled microbial biomass, expressed as log Response Ratio (see Materials and Methods in the main text for details). Results of the analysis are shown graphically. We use Arrhenius plot to vizualize the results.
 
-```{r Fig. 2, echo=FALSE, warning=FALSE, fig.cap="Fig. S2: Arrhenius plot of the relationship between the temperature (inverted value multiplied by the gas constant, see eq. 6 in Materials and Methods for details) and the natural logarithm of soil respiration rate (blue points, left y-axis). Symbols represent median respiration rate calculated over five degrees Kelvin interval increments (the whole temperature range is 274.6 - 323.1 K, i.e. 2 - 50°C). Error bars represent upper and lower quartiles. Vertical dashed line represent breakpoint temperature (25.2 ± 2.4 °C) at which the temperature sensitivity of soil respiration rate changes. Blue dashed line represents segmented linear regression (eq. 6). The breakpoint temperature corresponds with the breakpoint temperature of decadic logarithm of soil microbial biomass response ratio ($logRR_{Biomass}$, grey points, right y-axis). $logRR_{Biomass}$ defines the magnitude of change of microbial biomass at the given temperature relative to control. Control is defined as the microbial biomass at the the temperature 15°C or the closest temperature within a respective data set. $logRR_{Biomass}$ zero (solid horizontal line) indicates no change of microbial biomass relative to control. $logRR_{Biomass}$ less than zero indicates decrease of microbial biomass relative to control and vice versa.  Symbols represent median $logRR_{Biomass}$ calculated over five degrees Kelvin interval increments. Error bars represent upper and lower quartiles."}
+```{r Fig. 2, echo=FALSE, warning=FALSE, fig.cap="Fig. S2: Arrhenius plot of the relationship between the temperature (inverted value multiplied by the gas constant, see Materials and Methods for details) and the natural logarithm of soil respiration rate (blue points, left y-axis). Symbols represent median respiration rate calculated over five Kelvin intervals (the whole temperature range is 274.6 - 323.1 K, i.e. 2 - 50°C). Error bars represent upper and lower quartiles. Vertical dashed line represent breakpoint temperature (25.2 ± 2.4 °C) at which the temperature sensitivity of soil respiration rate changes. Blue dashed line represents segmented linear regression of eq. 3. The breakpoint temperature corresponds with the breakpoint temperature of decadic logarithm of soil microbial biomass response ratio (logRR, grey points, right y-axis). logRR defines the magnitude of change of microbial biomass at the given temperature relative to control. The control is defined as the CMB of a respective observation at 15°C or the closest temperature. logRR zero (solid horizontal line) indicates no change of microbial biomass relative to control. logRR less than zero indicates decrease of microbial biomass relative to control and vice versa.  Symbols represent median logRR calculated over five Kelvin intervals. Error bars represent upper and lower quartiles."}
 
 rbg<-dat
 rbg$Temp<-1/8.314/(rbg$Temperature)
@@ -413,7 +413,7 @@ As shown in the figure above, there is one significant breakpoint at the tempera
 
 The same analysis is conducted with four different soils published in Santruckova et al. (2003). Results of the analysis are shown graphically. 
 
-```{r Fig. 3, echo=FALSE, fig.cap="Fig. S3: Respiration rate (blue points, left y-axis) and the microbial biomass (grey points, right y-axis) as a function of the temperature in four different soils (Santruckova et al., 2003). Blue solid lines represent segmented linear regression (eq. 6). Coefficient of determination of the regression is reported ($R^{2}$). Vertical black dashed lines represent the breakpoint temperature of segmented linear regression. Blue dot-dashed line represent the best fit of Macromolecular Rate Theory equation (eq. 8). Note that each box have different scale of left and right y-axis.", message=FALSE, warning=FALSE}
+```{r Fig. 3, echo=FALSE, fig.cap="Fig. S3: Respiration rate (blue points, left y-axis) and the microbial biomass (grey points, right y-axis) as a function of the temperature in four different soils (Santruckova et al., 2003). Blue solid lines represent segmented linear regression of the first order decay equation with the Arrhenius type temperature response function. Coefficient of determination of the regression is reported ($R{2}$). Vertical black dashed lines represent the breakpoint temperature of segmented linear regression. Blue dot-dashed line represent the best fit of Macromolecular Rate Theory equation (eq. 6 in Materials and Methods).", message=FALSE, warning=FALSE}
 
 dat$Temp<-1/dat$Temperature/8.314
 
@@ -948,7 +948,7 @@ dat.results<-cbind(dat.results, coupled(dat))
 
 All data are visualized.
 
-```{r echo=FALSE, fig.height=35, fig.width=10, message=FALSE, warning=FALSE, fig.cap="Fig. S4: Correspondence between the measured respiration rates (blue points) and the respiration rates predicted by two equations (eq. 3 - solid line, eq. 4 - dashed, see Materials and Methods section for details). One panel corresponds to one observation."}
+```{r echo=FALSE, fig.height=35, fig.width=10, message=FALSE, warning=FALSE, fig.cap="Fig. S4: Correspondence between the measured respiration rates (blue points) and the respiration rates predicted by first order decay (solid line) and multiplicative (dashed line) equation with the Arrhenius type temperature response function (see Materials and Methods for details). One panel corresponds to one observation."}
 
 ggplot(dat.results, aes(Temperature-273.15, Rsoil))+
   geom_point(size=2,shape=21, alpha=0.5, fill="dodgerblue3", show.legend=F)+
@@ -992,14 +992,14 @@ t.a3<-data.frame(Minimum=c(summary(res$Eas)[1]/1000, summary(res$Easb)[1]/1000),
 rownames(t.a3)<-c("First order decay", "Multiplicative")
 
 
-kable(t.a3, digits = c(1), align = 'c', "html", booktabs=T, col.names = c('Minimum', 'Lower quartile', 'Median', 'Mean', 'Upper quartile', 'Maximum'), row.names=T, caption = "Table S3: Distribution of apparent temperature sensitivities of heterotrophic soil respiration rate among 129 unique observations. Apparent temperature sensitivity was estimated as $E_{A}$ parameter ($kJ~mol^{-1}$) of two different equations (eqs. 3 and 4 in Materials and Methods section).") %>% 
+kable(t.a3, digits = c(1), align = 'c', "html", booktabs=T, col.names = c('Minimum', 'Lower quartile', 'Median', 'Mean', 'Upper quartile', 'Maximum'), row.names=T, caption = "Table S3: Distribution of apparent temperature sensitivities of heterotrophic soil respiration rate among 130 unique observations. Apparent temperature sensitivity was estimated as $E_{A}$ parameter ($kJ~mol^{-1}$) of first order decay and multiplicative equation with the Arrhenius type temperature response function (eqs. 3 and 4 in Materials and Methods section).") %>% 
   kable_styling(bootstrap_options = c("hover")) 
 
 ```
 
 Both equations fit the data with different goodness. The goodness of fit is compared across all observations in the following figure. 
 
-```{r echo=FALSE, fig.height=4, fig.width=6, message=FALSE, warning=FALSE, fig.cap="Fig. S5: Coefficients of determination ($R^{2}$) of the fits of equations 3 and 4 (see Materials and Methods for details) for individual observations (n=129). Solid black line denotes 1:1 correspondence. When the symbol is below the 1:1 line, first order decay equation fit the data better than multiplicative equation and vice versa."}
+```{r echo=FALSE, fig.height=4, fig.width=6, message=FALSE, warning=FALSE, fig.cap="Fig. S5: Coefficients of determination ($R{2}$) of the fits of the first order decay and multiplicative equation with the Arrhenius type temperature response function (eqs. 3 and 4, see Materials and Methods for details) for individual observations (n=130). Solid black line denotes 1:1 correspondence. When the symbol is below the 1:1 line, first order decay equation fit the data better than multiplicative equation and vice versa. Observations in which first order decay equation fit the data better than multiplicative equation are in red colour (n=84). Observations in which multiplicative equation fit the data better than first order decay equation are in green colour (n=46). In majority of observations, $R{2}$ is higher than 0.8 (see the main text for details)."}
 
 r2<-dat.results
 r2$Legend<-ifelse(dat.results$R2s>dat.results$R2sb, "a", "b")
@@ -1271,7 +1271,7 @@ ggplot(dat.results2, aes(Temperature-273.15, Biomass))+
 
 Effect of defined categories on temperature sensitivity of $R_{SOIL}$ is analyzed by generalized linear regression. Every $E_{A}$ estimate is weighted by its inverse normal distribution variance. Pairwise comparison between categories is done by TukeyHSD test. Results are visualized. 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S7: Temperature sensitivities of three different categories defining the observed trend of the microbial biomass change along the increasing temperature (Decreasing, Constant, Increasing). Temperature sensitivity was estimated as an activation energy parameter ($E_{A}$) of eq. 3 (A) and 4 (B). Grey points represent individual $E_{A}$ estimates (estimated for each observation separately). Grey error bars represent the standard deviation of the estimate. Blue points represent the mean $E_{A}$ estimated for each category by generalized linear regression. Corresponding error bars determine 95% confidence intervals of the estimate. Letters above the symbols summarize results of TukeyHSD post hoc pairwise comparison between categories. Temperature sensitivities of all categories expressed as a $Q_{10}$ parameter (in temperature interval 10 - 20 °C) are reported below the symbols."}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S7: Apparent temperature sensitivities of three different categories defining the observed trend of the microbial biomass change along the increasing temperature (Decreasing, Constant, Increasing). Temperature sensitivity was estimated as an activation energy parameter ($E_{A}$) of eq. 3 (A) and 4 (B). Grey points represent individual $E_{A}$ estimates (estimated for each observation separately). Grey error bars represent the standard deviation of the estimate. Blue points represent the mean $E_{A}$ estimated for each category by generalized linear regression. Corresponding error bars determine 95% confidence intervals of the estimate. Letters above the symbols summarize results of TukeyHSD post hoc pairwise comparison between categories. Temperature sensitivities of all categories expressed as a $Q_{10}$ parameter (in temperature interval 10 - 20 °C) are reported below the symbols."}
 ea_boxplot<-dat.results2[!duplicated(dat.results2$Eas),]
 lm.categories<-lm(Eas~Category, weights = 1/Eas.sd^2, 
                   ea_boxplot)
@@ -1506,7 +1506,7 @@ chart.Correlation(cor1, histogram = T, pch=19)
 ```
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="The difference between between the $E_{A}$ parameters estimated for first order decay and multiplicative equation ($\\Delta~E_{A}$) as eplained be the temperature sensitivity of microbial biomass ($E_{A-Biomass}$. Grey solid line represents 1:1 relationship. Different colours denote three different categories of microbial biomass response to temperature (Increasing, Decreasing and Constant). )"}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="The difference between the $E_{A}$ parameters estimated for first order decay and multiplicative equation ($\\Delta~E_{A}$) as explained by the temperature sensitivity of microbial biomass ($E_{A-Biomass}$. Grey solid line represents 1:1 relationship. Different colours denote three different categories of microbial biomass response to temperature (Increasing, Decreasing and Constant). )"}
 
 ggplot(dat.results2, aes(Ea.mic/1000, (Eas-Easb)/1000))+geom_point(size=6, shape=21, aes(fill=Category))+
   geom_hline(yintercept = 0)+geom_vline(xintercept = 0)+theme_bw()+xlim(-100, 200)+ylim(-100, 200)+
