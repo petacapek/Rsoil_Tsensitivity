@@ -32,6 +32,7 @@ library(emmeans)
 library(knitr)
 library(kableExtra)
 library(PerformanceAnalytics)
+library(reshape)
 
 dat<-read.csv("rsoil_tsensitivity_data11192018.csv")
 dat<-dat[order(dat$ID), ]
@@ -292,9 +293,9 @@ kable(t.a1, digits = c(2), align = 'c', "html", booktabs=T, col.names = c('Equat
 
 Results are further compared graphically. 
 
-```{r Fig. 1 of the main text, echo=FALSE, fig.cap="Fig. S1: Goodness of correspondence between measured and predicted soil respiration rate across all observations. The respiration rate was predicted by two different equations; first order decay and multiplicative equation with Arrhenius type temperature response function (eqs. 3 and 4 in Materials and Methods section). Black dashed line represents 1:1 correspondence. Coefficient of determination ($R^{2}$) is reported for each equation.  Both axis are on the logarithmic scale.", fig.height=6, fig.width=12, message=FALSE, warning=FALSE}
+```{r Fig. 1 of the main text, echo=FALSE, fig.cap="Fig. S1: Goodness of correspondence between measured and predicted soil respiration rate across all observations. The respiration rate was predicted by two different equations; first order decay and multiplicative equation. Black dashed line represents 1:1 correspondence. Coefficient of determination ($R^{2}$) is reported for each equation.  Both axis are on the logarithmic scale.", fig.height=6, fig.width=12, message=FALSE, warning=FALSE}
 ovp1<-dat[, c("Rsoil", "Biomass", "Ctot", "Temperature")]
-ovp1$Legend<-c("First order")
+ovp1$Legend<-c("First order decay")
 ovp1$Pred<-ovp1$Ctot*first_order_global[1]*exp(first_order_global[2]/8.314/ovp1$Temperature)
 lbfirst<-paste("R^2 == ", round(first_order_global[5], 2))
 
@@ -304,7 +305,7 @@ ovp2$Pred<-ovp2$Ctot*ovp2$Biomass*multi_global[1]*exp(multi_global[2]/8.314/ovp2
 lbcoupled<-paste("R^2 == ", round(multi_global[5], 2))
 
 ovp<-rbind(ovp1, ovp2)
-ovp$Legend<-factor(ovp$Legend, levels=c("First order", "Multiplicative"))
+ovp$Legend<-factor(ovp$Legend, levels=c("First order decay", "Multiplicative"))
 
 #6 to 12 inches when exported to pdf
 ggplot(ovp, aes(Rsoil, Pred))+geom_point(size=2,shape=21, alpha=0.5,fill="dodgerblue3")+
@@ -317,7 +318,7 @@ ggplot(ovp, aes(Rsoil, Pred))+geom_point(size=2,shape=21, alpha=0.5,fill="dodger
   xlab(expression(paste("Measured respiration rate (nmol ",g^{-1}~h^{-1}, ")")))+
   ylab(expression(paste("Predicted respiration rate (nmol ",g^{-1}~h^{-1}, ")")))+
   geom_text(data=data.frame(x=0.03, y=900, label=c(lbfirst, lbcoupled), 
-                            Legend=c("First order","Multiplicative")), 
+                            Legend=c("First order decay","Multiplicative")), 
             aes(x,y,label=label), inherit.aes=FALSE, parse=T, size=3.5)+
   theme_bw()+
   theme(axis.line.x = element_blank(),
@@ -338,22 +339,12 @@ ggplot(ovp, aes(Rsoil, Pred))+geom_point(size=2,shape=21, alpha=0.5,fill="dodger
         panel.spacing = unit(0.5, "lines"))
 ```
 
-Next, presence of significanr breakpoints in temperature response of heterotrophic soil respiration rate ($R_{SOIL}$) are looked for using segmented linear regression. The same analysis is conducted with scaled microbial biomass, expressed as log Response Ratio (see Materials and Methods in the main text for details). Results of the analysis are shown graphically. We use Arrhenius plot to vizualize the results.
+Next, presence of significant breakpoints in temperature response of heterotrophic soil respiration rate ($R_{SOIL}$) are looked for using segmented linear regression. The same analysis is conducted with scaled microbial biomass, expressed as log Response Ratio (see Materials and Methods in the main text for details). Results of the analysis are shown graphically. We use Arrhenius plot to vizualize the results.
 
-```{r Fig. 2, echo=FALSE, warning=FALSE, fig.cap="Fig. S2: Arrhenius plot of the relationship between the temperature (inverted value multiplied by the gas constant, see Materials and Methods for details) and the natural logarithm of soil respiration rate (blue points, left y-axis). Symbols represent median respiration rate calculated over five Kelvin intervals (the whole temperature range is 274.6 - 323.1 K, i.e. 2 - 50°C). Error bars represent upper and lower quartiles. Vertical dashed line represent breakpoint temperature (25.2 ± 2.4 °C) at which the temperature sensitivity of soil respiration rate changes. Blue dashed line represents segmented linear regression of eq. 3. The breakpoint temperature corresponds with the breakpoint temperature of decadic logarithm of soil microbial biomass response ratio (logRR, grey points, right y-axis). logRR defines the magnitude of change of microbial biomass at the given temperature relative to control. The control is defined as the CMB of a respective observation at 15°C or the closest temperature. logRR zero (solid horizontal line) indicates no change of microbial biomass relative to control. logRR less than zero indicates decrease of microbial biomass relative to control and vice versa.  Symbols represent median logRR calculated over five Kelvin intervals. Error bars represent upper and lower quartiles."}
+```{r Fig. 2, echo=FALSE, warning=FALSE, fig.cap="Fig. S2: Relationship between temperature and natural logarithm of soil respiration rate (blue points, left y-axis) or decadic logarithm of soil microbial biomass response ratio (logRR, grey points, right y-axis). logRR defines the magnitude of change of microbial biomass at the given temperature relative to control. The control is defined as the CMB of a respective observation at 15°C or the closest temperature. logRR zero (solid horizontal line) indicates no change of microbial biomass relative to control. logRR less than zero indicates decrease of microbial biomass relative to control and vice versa. Blue line represents segmented linear regression of first order decay function (eq. 5 in Metrials and Methods section). Blue line represents segmented linear regression of logRR temperature response. The breakpoint temperature for soil respiration rate corresponds with the breakpoint temperature of logRR."}
 
 rbg<-dat
-rbg$Temp<-1/8.314/(rbg$Temperature)
-rbg$Tcut<-cut(rbg$Temperature, 20)
-
-#calculate median and quartiles for respiration rate and biomass
-rbg_sum<-rbg %>% group_by(Tcut) %>% summarize(Rmed=log(median(Rsoil, na.rm=T)),
-                                              Rl=log(quantile(Rsoil, probs = 0.25, na.rm = T)),
-                                              Ru=log(quantile(Rsoil, probs = 0.75, na.rm = T)),
-                                              Bmed=log10(median(Bscaled, na.rm=T)),
-                                              Bl=log10(quantile(Bscaled, probs = 0.25, na.rm = T)),
-                                              Bu=log10(quantile(Bscaled, probs = 0.75, na.rm = T)),
-                                              Temp=median(Temp))
+rbg$Temp<-1/dat$Temperature/8.314
 
 #statistic
 lm.all<-lm(log(Rsoil)~Temp, offset = log(Ctot), rbg)
@@ -371,23 +362,21 @@ lmb.o<-segmented(lmb.all, seg.Z = ~Temp)
 break.b<-lmb.o$psi[2]
 1/break.b/8.314-273.15
 #davies.test(lmb.all, ~Temp)
-
+Predictions$all_b<-predict(lmb.o, newdata=Predictions)
 
 #6 to 8 inches when exported to pdf
-ggplot(rbg_sum, aes(x=Temp))+
-  geom_hline(yintercept = 0)+
-  geom_vline(xintercept = break.all, lwd=0.5, colour="black", lty=2)+
-  geom_errorbar(aes(ymin=Rl, ymax=Ru),colour="black",width=0.000001)+
-  geom_point(size=2,shape=21, aes(y=Rmed, fill="Respiration rate"))+
-  geom_line(data = Predictions, aes(x=Temp, y=all*1.137391),colour="dodgerblue3", lwd=0.5, lty=2)+
-  geom_errorbar(aes(ymin=Bl*5, ymax=Bu*6),colour="black",width=0.000001)+
-  geom_point(size=2,shape=21, aes(y=Bmed*5, fill="Biomass"))+
+ggplot(rbg, aes(x=Temperature-273.15))+
+  geom_vline(xintercept = 1/break.all/8.314-273.15, lwd=1, colour="black", lty=2)+
+  geom_point(size=2,shape=21, aes(y=log(Rsoil), fill="Respiration rate"), alpha=0.5)+
+  geom_line(data = Predictions, aes(x=1/Temp/8.314-273.15, y=all*1.137391),colour="dodgerblue3", lwd=1.5)+
+  geom_line(data = Predictions, aes(x=1/Temp/8.314-273.15, y=all_b),colour="grey60", lwd=1.5)+
+  geom_point(size=2,shape=21, aes(y=log10(Bscaled)*5, fill="Biomass"), alpha=0.5)+
   scale_y_continuous(sec.axis = sec_axis(~./5, 
                                          name = expression(paste(italic("log")~RR[Biomass]))))+
   scale_colour_manual(values = c("grey60", "dodgerblue3"))+
   scale_fill_manual(values = c("grey60", "dodgerblue3"))+
   labs(y = expression(paste(italic("ln") ,"(Respiration rate) (nmol ",g^{-1}~h^{-1}, ")")),
-       x = expression(paste(frac(1,8.314%*%Temperature~(K)))),
+       x = expression(paste("Temperature (°C)")),
        colour = "Legend")+
   theme_bw()+
   theme(axis.line.x = element_blank(),
@@ -400,7 +389,7 @@ ggplot(rbg_sum, aes(x=Temp))+
         axis.title = element_text(size=10,colour="black"),
         legend.text=element_text(size=10,colour="black"),
         legend.title=element_blank(),
-        legend.justification=c(1,0), legend.position=c(0.99,0.01),
+        legend.justification=c(1,0), legend.position=c(0.25,0.01),
         legend.key.size = unit(1,'lines'),
         legend.background=element_rect(fill=NA, colour=NA),
         strip.text.x = element_text(size=10),
@@ -413,7 +402,7 @@ As shown in the figure above, there is one significant breakpoint at the tempera
 
 The same analysis is conducted with four different soils published in Santruckova et al. (2003). Results of the analysis are shown graphically. 
 
-```{r Fig. 3, echo=FALSE, fig.cap="Fig. S3: Respiration rate (blue points, left y-axis) and the microbial biomass (grey points, right y-axis) as a function of the temperature in four different soils (Santruckova et al., 2003). Blue solid lines represent segmented linear regression of the first order decay equation with the Arrhenius type temperature response function. Coefficient of determination of the regression is reported ($R{2}$). Vertical black dashed lines represent the breakpoint temperature of segmented linear regression. Blue dot-dashed line represent the best fit of Macromolecular Rate Theory equation (eq. 6 in Materials and Methods).", message=FALSE, warning=FALSE}
+```{r Fig. 3, echo=FALSE, fig.cap="Fig. S3: Respiration rate (blue points, left y-axis) and the microbial biomass (grey points, right y-axis) as a function of the temperature in four different soils (Santruckova et al., 2003). Blue solid lines represent segmented linear regression of the first order decay equation with the Arrhenius type temperature response function. Coefficient of determination of the regression is reported ($R{2}$). Vertical black dashed lines represent the breakpoint temperature of segmented linear regression. Blue dot-dashed line represent the best fit of Macromolecular Rate Theory equation (eq. 8 in Materials and Methods).", message=FALSE, warning=FALSE}
 
 dat$Temp<-1/dat$Temperature/8.314
 
@@ -434,15 +423,15 @@ lb31<-paste("R^2 == ", round(as.numeric(summary(o31)[8]), 2))
 mmr<-function(data){
   cost<-function(x){
     par<-(x)
-    names(par)<-c("dH", "dCp", "dS", "Topt")
+    names(par)<-c("dH", "dCp", "dS")
     
     obs<-log(data[,"Rsoil"])
     Temp<-data[,"Temperature"]
     Ctot<-log(data[,"Ctot"])
     
     
-    yhat<-Ctot+log(1.38e-23*Temp/6.63e-34*3600)-(par[1]+par[2]*(Temp-par[4]))/8.314/Temp+
-      (par[3]+par[2]*(log(Temp)-log(par[4])))/8.314
+    yhat<-Ctot+log(1.38e-23*Temp/6.63e-34*3600)-(par[1]+par[2]*(Temp-313.15))/8.314/Temp+
+      (par[3]+par[2]*(log(Temp)-log(313.15)))/8.314
     
     ll<--length(obs)*log(2*mean(obs, na.rm=T)*sd(obs, na.rm=T)^2)/2-sum((obs-yhat)^2, na.rm=T)/2/sd(obs, na.rm=T)^2
     
@@ -450,9 +439,9 @@ mmr<-function(data){
   }
   
   #approximate parameter estimation is done by MCMC method
-  par_mcmc<-modMCMC(f=cost, p=c(dH=10000, dCp=-3000, dS=5000, Topt=300),
-                    lower=c(dH=-100000, dCp=-300000, dS=-50000, Topt=273.15),
-                    upper=c(dH=100000, dCp=300000, dS=50000, Topt=350), niter=50000)
+  par_mcmc<-modMCMC(f=cost, p=c(dH=10000, dCp=-3000, dS=5000),
+                    lower=c(dH=-100000, dCp=-300000, dS=-50000),
+                    upper=c(dH=100000, dCp=300000, dS=50000), niter=50000)
   
   #lower and upper limits for parameters are extracted
   pl<-summary(par_mcmc)["min",]
@@ -474,8 +463,8 @@ dat31$label<-c("Pokulikha")
 
 fig31<-ggplot(dat31, aes(x=Temperature-273.15))+
     geom_point(size=2,shape=21, alpha=0.5, aes(y=Rsoil, fill="Respiration rate"))+
-    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr31[1]+mmr31[2]*(Temperature-mmr31[4]))/8.314/Temperature+
-                          (mmr31[3]+mmr31[2]*(log(Temperature)-log(mmr31[4])))/8.314)),
+    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr31[1]+mmr31[2]*(Temperature-313.15))/8.314/Temperature+
+                          (mmr31[3]+mmr31[2]*(log(Temperature)-log(313.15)))/8.314)),
               lwd=0.5,colour="dodgerblue3", lty=4)+
     geom_line(data=Predictions, aes(x=1/8.314/Temp-273.15, y=exp(o31)),colour="dodgerblue3", lwd=0.5)+
     geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass*1.1, fill="Biomass"))+
@@ -528,8 +517,8 @@ dat32$label<-c("Bakhta")
 
 fig32<-ggplot(dat32, aes(x=Temperature-273.15))+
     geom_point(size=2,shape=21, alpha=0.5, aes(y=Rsoil, fill="Respiration rate"))+
-    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr32[1]+mmr32[2]*(Temperature-mmr32[4]))/8.314/Temperature+
-                          (mmr32[3]+mmr32[2]*(log(Temperature)-log(mmr32[4])))/8.314)),
+    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr32[1]+mmr32[2]*(Temperature-313.15))/8.314/Temperature+
+                          (mmr32[3]+mmr32[2]*(log(Temperature)-log(313.15)))/8.314)),
               lwd=0.5,colour="dodgerblue3", lty=4)+
     geom_line(data=Predictions, aes(x=1/8.314/Temp-273.15, y=exp(o32)), colour="dodgerblue3", lwd=0.5)+
     geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass*1.1, fill="Biomass"))+
@@ -579,8 +568,8 @@ dat33$label<-c("Zotino")
 
 fig33<-ggplot(dat33, aes(x=Temperature-273.15))+
     geom_point(size=2,shape=21, alpha=0.5, aes(y=Rsoil, fill="Respiration rate"))+
-    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr33[1]+mmr33[2]*(Temperature-mmr33[4]))/8.314/Temperature+
-                          (mmr33[3]+mmr33[2]*(log(Temperature)-log(mmr33[4])))/8.314)),
+    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr33[1]+mmr33[2]*(Temperature-313.15))/8.314/Temperature+
+                          (mmr33[3]+mmr33[2]*(log(Temperature)-log(313.15)))/8.314)),
               lwd=0.5,colour="dodgerblue3", lty=4)+
     geom_line(data=Predictions, aes(x=1/8.314/Temp-273.15, y=exp(o33)), colour="dodgerblue3", lwd=0.5)+
     geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass/5, fill="Biomass"))+
@@ -616,7 +605,7 @@ fig33<-ggplot(dat33, aes(x=Temperature-273.15))+
 #34
 ###statistics
 lm34<-lm(log(Rsoil)~Temp, subset(dat, ID==34))
-o34<-segmented(lm34, seg.Z = ~Temp)
+o34<-segmented(lm34, seg.Z = ~Temp, psi=c(0.0004074488))
 break34<-o34$psi[2]
 Predictions$o34<-predict(o34, newdata=Predictions)
 lb34<-paste("R^2 == ", round(as.numeric(summary(o34)[8]), 2))
@@ -635,8 +624,8 @@ dat34$label<-c("Nazimovo")
 
 fig34<-ggplot(dat34, aes(x=Temperature-273.15))+
     geom_point(size=2,shape=21, alpha=0.5, aes(y=Rsoil, fill="Respiration rate"))+
-    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr34[1]+mmr34[2]*(Temperature-mmr34[4]))/8.314/Temperature+
-                          (mmr34[3]+mmr34[2]*(log(Temperature)-log(mmr34[4])))/8.314)),
+    geom_line(aes(y=exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr34[1]+mmr34[2]*(Temperature-313.15))/8.314/Temperature+
+                          (mmr34[3]+mmr34[2]*(log(Temperature)-log(313.15)))/8.314)),
               lwd=0.5,colour="dodgerblue3", lty=4)+
     geom_line(data=Predictions, aes(x=1/8.314/Temp-273.15, y=exp(o34)), colour="dodgerblue3", lwd=0.5)+
     geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass/5, fill="Biomass"))+
@@ -682,36 +671,36 @@ AICcalc<-function(Observed, Predicted, ncoef){
 
 #segmented
 AIC31<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==31), "Rsoil"],
-        Predicted = exp(predict(o31)), ncoef = 3)
+        Predicted = exp(predict(o31)), ncoef = 4)
 #mmr
 MMR31<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==31), "Rsoil"],
         Predicted = with(dat[(!is.na(dat$Rsoil) & dat$ID==31),],
-                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr31[1]+mmr31[2]*(Temperature-mmr31[4]))/8.314/Temperature+
-                               (mmr31[3]+mmr31[2]*(log(Temperature)-log(mmr31[4])))/8.314)), ncoef = 4)
+                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr31[1]+mmr31[2]*(Temperature-313.15))/8.314/Temperature+
+                               (mmr31[3]+mmr31[2]*(log(Temperature)-log(313.15)))/8.314)), ncoef = 3)
 
-exp((AIC31-MMR31)/2)
+exp((MMR31-AIC31)/2)
 
 #32
 #segmented
 AIC32<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==32), "Rsoil"],
-        Predicted = exp(predict(o32)), ncoef = 3)
+        Predicted = exp(predict(o32)), ncoef = 4)
 #mmr
 MMR32<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==32), "Rsoil"],
         Predicted = with(dat[(!is.na(dat$Rsoil) & dat$ID==32),],
-                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr32[1]+mmr32[2]*(Temperature-mmr32[4]))/8.314/Temperature+
-                               (mmr32[3]+mmr32[2]*(log(Temperature)-log(mmr32[4])))/8.314)), ncoef = 4)
+                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr32[1]+mmr32[2]*(Temperature-313.15))/8.314/Temperature+
+                               (mmr32[3]+mmr32[2]*(log(Temperature)-log(313.15)))/8.314)), ncoef = 3)
 
-exp((AIC32-MMR32)/2)
+exp((MMR32-AIC32)/2)
 
 #33
 #segmented
 AIC33<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==33), "Rsoil"],
-        Predicted = exp(predict(o33)), ncoef = 3)
+        Predicted = exp(predict(o33)), ncoef = 4)
 #mmr
 MMR33<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==33), "Rsoil"],
         Predicted = with(dat[(!is.na(dat$Rsoil) & dat$ID==33),],
-                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr33[1]+mmr33[2]*(Temperature-mmr33[4]))/8.314/Temperature+
-                               (mmr33[3]+mmr33[2]*(log(Temperature)-log(mmr33[4])))/8.314)), ncoef = 4)
+                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr33[1]+mmr33[2]*(Temperature-313.15))/8.314/Temperature+
+                               (mmr33[3]+mmr33[2]*(log(Temperature)-log(313.15)))/8.314)), ncoef = 3)
 
 exp((AIC33-MMR33)/2)
 
@@ -720,23 +709,23 @@ exp((AIC33-MMR33)/2)
 
 #segmented
 AIC34<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==34), "Rsoil"],
-        Predicted = exp(predict(o34)), ncoef = 3)
+        Predicted = exp(predict(o34)), ncoef = 4)
 #mmr
 MMR34<-AICcalc(Observed=dat[(!is.na(dat$Rsoil) & dat$ID==34), "Rsoil"],
         Predicted = with(dat[(!is.na(dat$Rsoil) & dat$ID==34),],
-                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr34[1]+mmr34[2]*(Temperature-mmr34[4]))/8.314/Temperature+
-                               (mmr34[3]+mmr34[2]*(log(Temperature)-log(mmr34[4])))/8.314)), ncoef = 4)
+                         exp(log(Ctot)+log(1.38e-23*Temperature/6.63e-34*3600)-(mmr34[1]+mmr34[2]*(Temperature-313.15))/8.314/Temperature+
+                               (mmr34[3]+mmr34[2]*(log(Temperature)-log(313.15)))/8.314)), ncoef = 3)
 
 exp((AIC34-MMR34)/2)
 
 t.a2<-data.frame(AIC=c(MMR31, AIC31, MMR32, AIC32, MMR33, AIC33,  MMR34, AIC34),
                  dAIC=c(NA, AIC31-MMR31, NA, AIC32-MMR32, NA, AIC33-MMR33,NA, AIC34-MMR34),
-                 p=c(NA, exp((AIC31-MMR31)/2), NA, exp((AIC32-MMR32)/2), NA, exp((AIC33-MMR33)/2), NA, exp((AIC34-MMR34)/2)))
+                 p=c(NA, exp((MMR31-AIC31)/2), NA, exp((MMR32-AIC32)/2), NA, exp((AIC33-MMR33)/2), NA, exp((AIC34-MMR34)/2)))
 
 options(knitr.kable.NA = '')
 
 
-kable(t.a2, digits = c(2), align = 'c', "html", booktabs=T, col.names = c('AIC', '$\\Delta~AIC$', 'p'), row.names=F, caption = "Table S2: Goodness of fit of two equations (first order decay equation with Arrhenius type tempeture response function and with two temperature sensitivities for two temperature intervals, and Macromolecular Rate theory equation respectively) calculated for four different soils shown in Fig. S3. Goodness of fit is expressed as Akaike Infromation Criterion (AIC). Difference in AIC ($\\Delta$ AIC) of two equations and its statistical significance (p) is reported. Rows with red background denote the AIC of the Macromolecular Rate theory equation fit, which is poorer in all four soils.") %>% 
+kable(t.a2, digits = c(2), align = 'c', "html", booktabs=T, col.names = c('AIC', '$\\Delta~AIC$', 'p'), row.names=F, caption = "Table S2: Goodness of fit of two equations (first order decay equation with two temperature sensitivities for two temperature intervals, and Macromolecular Rate theory equation respectively) calculated for four different soils shown in Fig. S3. Goodness of fit is expressed as Akaike Infromation Criterion (AIC). Difference in AIC ($\\Delta$ AIC) of two equations and its statistical significance (p) is reported. Rows with red background denote the AIC of the Macromolecular Rate theory equation fit.") %>% 
   kable_styling() %>%
   group_rows("Pokulikha", 1, 2) %>%
   group_rows("Bakhta", 3, 4) %>%
@@ -948,7 +937,7 @@ dat.results<-cbind(dat.results, coupled(dat))
 
 All data are visualized.
 
-```{r echo=FALSE, fig.height=35, fig.width=10, message=FALSE, warning=FALSE, fig.cap="Fig. S4: Correspondence between the measured respiration rates (blue points) and the respiration rates predicted by first order decay (solid line) and multiplicative (dashed line) equation with the Arrhenius type temperature response function (see Materials and Methods for details). One panel corresponds to one observation."}
+```{r echo=FALSE, fig.height=35, fig.width=10, message=FALSE, warning=FALSE, fig.cap="Fig. S4: Correspondence between the measured respiration rates (blue points) and the respiration rates predicted by first order decay (solid line) and multiplicative (dashed line) equation (see Materials and Methods for details). One panel corresponds to one observation."}
 
 ggplot(dat.results, aes(Temperature-273.15, Rsoil))+
   geom_point(size=2,shape=21, alpha=0.5, fill="dodgerblue3", show.legend=F)+
@@ -992,14 +981,14 @@ t.a3<-data.frame(Minimum=c(summary(res$Eas)[1]/1000, summary(res$Easb)[1]/1000),
 rownames(t.a3)<-c("First order decay", "Multiplicative")
 
 
-kable(t.a3, digits = c(1), align = 'c', "html", booktabs=T, col.names = c('Minimum', 'Lower quartile', 'Median', 'Mean', 'Upper quartile', 'Maximum'), row.names=T, caption = "Table S3: Distribution of apparent temperature sensitivities of heterotrophic soil respiration rate among 130 unique observations. Apparent temperature sensitivity was estimated as $E_{A}$ parameter ($kJ~mol^{-1}$) of first order decay and multiplicative equation with the Arrhenius type temperature response function (eqs. 3 and 4 in Materials and Methods section).") %>% 
+kable(t.a3, digits = c(1), align = 'c', "html", booktabs=T, col.names = c('Minimum', 'Lower quartile', 'Median', 'Mean', 'Upper quartile', 'Maximum'), row.names=T, caption = "Table S3: Distribution of apparent temperature sensitivities of heterotrophic soil respiration rate among 130 unique observations. Apparent temperature sensitivity was estimated as $E_{A}$ parameter ($kJ~mol^{-1}$) of first order decay and multiplicative equation (eqs. 5 and 6 in Materials and Methods section).") %>% 
   kable_styling(bootstrap_options = c("hover")) 
 
 ```
 
 Both equations fit the data with different goodness. The goodness of fit is compared across all observations in the following figure. 
 
-```{r echo=FALSE, fig.height=4, fig.width=6, message=FALSE, warning=FALSE, fig.cap="Fig. S5: Coefficients of determination ($R{2}$) of the fits of the first order decay and multiplicative equation with the Arrhenius type temperature response function (eqs. 3 and 4, see Materials and Methods for details) for individual observations (n=130). Solid black line denotes 1:1 correspondence. When the symbol is below the 1:1 line, first order decay equation fit the data better than multiplicative equation and vice versa. Observations in which first order decay equation fit the data better than multiplicative equation are in red colour (n=84). Observations in which multiplicative equation fit the data better than first order decay equation are in green colour (n=46). In majority of observations, $R{2}$ is higher than 0.8 (see the main text for details)."}
+```{r echo=FALSE, fig.height=4, fig.width=6, message=FALSE, warning=FALSE, fig.cap="Fig. S5: Coefficients of determination ($R{2}$) of the fits of the first order decay and multiplicative equation (eqs. 5 and 6, see Materials and Methods for details) for individual observations (n=130). Solid black line denotes 1:1 correspondence. When the symbol is below the 1:1 line, first order decay equation fit the data better than multiplicative equation and vice versa. Observations in which first order decay equation fit the data better than multiplicative equation are in red colour (n=84). Observations in which multiplicative equation fit the data better than first order decay equation are in green colour (n=46). In majority of observations, $R{2}$ is higher than 0.8 (see the main text for details)."}
 
 r2<-dat.results
 r2$Legend<-ifelse(dat.results$R2s>dat.results$R2sb, "a", "b")
@@ -1031,7 +1020,7 @@ Next, observations are divided into three categories defining direction of tempe
 Categories are defined based on the estimated $E_{A}$ parameter. When the 95% confidence interval of the $E_{A}$ parameter is negative, microbial biomass is considered increasing with temperature. In opposite case, microbial biomass is considered decreasing with temperature. When the 95% confidence interval includes zero, microbial biomass is considered constant.
 Observation 31 - 34 are treated separately, because microbial biomass increases with temperature first and then decreases with the temperature. Results are visualized.
 
-```{r echo=FALSE, fig.height=35, fig.width=10, message=FALSE, warning=FALSE, fig.cap="Fig. S6: Relationship between the microbial biomass carbon and temperature. Solid lines represent fit of linearized Arrhenius equation. Red symbols and lines denote decreasing trend of microbial biomass with temperature, green symbols and lines represent increasing trend and grey symbols and lines denote no or inconsistent relationship between the temperature and microbial biomass carbon (thus defined as Constant). "}
+```{r echo=FALSE, fig.height=35, fig.width=10, message=FALSE, warning=FALSE, fig.cap="Fig. S6: Relationship between the microbial biomass carbon and temperature. Solid lines represent fit of linearized Arrhenius equation (eq. 9 in Material and Methods section). Red symbols and lines denote decreasing trend of microbial biomass with temperature, green symbols and lines represent increasing trend and grey symbols and lines denote no or inconsistent relationship between the temperature and microbial biomass carbon (thus defined as Constant). "}
 b_change<-function(data){
   
   #list of unique observations
@@ -1271,7 +1260,7 @@ ggplot(dat.results2, aes(Temperature-273.15, Biomass))+
 
 Effect of defined categories on temperature sensitivity of $R_{SOIL}$ is analyzed by generalized linear regression. Every $E_{A}$ estimate is weighted by its inverse normal distribution variance. Pairwise comparison between categories is done by TukeyHSD test. Results are visualized. 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S7: Apparent temperature sensitivities of three different categories defining the observed trend of the microbial biomass change along the increasing temperature (Decreasing, Constant, Increasing). Temperature sensitivity was estimated as an activation energy parameter ($E_{A}$) of eq. 3 (A) and 4 (B). Grey points represent individual $E_{A}$ estimates (estimated for each observation separately). Grey error bars represent the standard deviation of the estimate. Blue points represent the mean $E_{A}$ estimated for each category by generalized linear regression. Corresponding error bars determine 95% confidence intervals of the estimate. Letters above the symbols summarize results of TukeyHSD post hoc pairwise comparison between categories. Temperature sensitivities of all categories expressed as a $Q_{10}$ parameter (in temperature interval 10 - 20 °C) are reported below the symbols."}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S7: Apparent temperature sensitivities of three different categories defining the observed trend of the microbial biomass change along the increasing temperature (Decreasing, Constant, Increasing). Temperature sensitivity was estimated as an activation energy parameter ($E_{A}$) of eq. 5 (A) and 6 (B). Grey points represent individual $E_{A}$ estimates (estimated for each observation separately). Grey error bars represent the standard deviation of the estimate. Blue points represent the mean $E_{A}$ estimated for each category by generalized linear regression. Corresponding error bars determine 95% confidence intervals of the estimate. Letters above the symbols summarize results of TukeyHSD post hoc pairwise comparison between categories. Temperature sensitivities of all categories expressed as a $Q_{10}$ parameter (in temperature interval 10 - 20 °C) are reported below the symbols."}
 ea_boxplot<-dat.results2[!duplicated(dat.results2$Eas),]
 lm.categories<-lm(Eas~Category, weights = 1/Eas.sd^2, 
                   ea_boxplot)
@@ -1417,28 +1406,39 @@ Across all observations, 15 different equations were fitted and their goodness o
   where 
 
 $CUE~=~\emptyset~\times~(\frac{N:C_{S}}{N:C_{MB}})^{\tau}$
+
+  [7] $R_{SOIL}~=~V_{MAX}~\times~DOC~\times~C_{MB}~\times~\frac{1}{K_{M}~+~DOC}~\times~(1~-~CUE)$
   
-  [7] $R_{SOIL}~=~A~\times~e^{\frac{E_{A}}{R~\times~T}}$
+  [8] $R_{SOIL}~=~A~\times~e^{\frac{E_{A}}{\Re~\times~T}}$
   
-  [8] $R_{SOIL}~=~k~\times~C_{S}~\times~e^{\frac{E_{A}}{R~\times~T}}$
+  [9] $R_{SOIL}~=~k~\times~C_{S}~\times~e^{\frac{E_{A}}{\Re~\times~T}}$
   
-  [9] $R_{SOIL}~=~k~\times~C_{S}~\times~C_{MB}~\times~e^{\frac{E_{A}}{R~\times~T}}$
+  [10] $R_{SOIL}~=~k~\times~DOC~\times~e^{\frac{E_{A}}{\Re~\times~T}}$
   
-  [10] $R_{SOIL}~=~C_{S}~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K_{M}~+~C_{S}}$
+  [11] $R_{SOIL}~=~k~\times~C_{S}~\times~C_{MB}~\times~e^{\frac{E_{A}}{\Re~\times~T}}$
   
-  [11] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K_{M}~+~DOC}$
+  [12] $R_{SOIL}~=~k~\times~DOC~\times~C_{MB}~\times~e^{\frac{E_{A}}{\Re~\times~T}}$
   
-  [12] $R_{SOIL}~=~C_{S}~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{R~\times~T}}~+~C_{S}}$
+  [13] $R_{SOIL}~=~C_{S}~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{\Re~\times~T}}~\times~\frac{1}{K_{M}~+~C_{S}}$
   
-  [13] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{R~\times~T}}~+~DOC}$
+  [14] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{\Re~\times~T}}~\times~\frac{1}{K_{M}~+~DOC}$
   
-  [14] $R_{SOIL}~=~C_{S}~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{R~\times~T}}~+~C_{S}}~\times~[1~-~CUE_{0}~-~\omega~(T~-~273.15)]$
+  [15] $R_{SOIL}~=~C_{S}~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{\Re~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{\Re~\times~T}}~+~C_{S}}$
   
-  [15] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{R~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{R~\times~T}}~+~DOC}~\times~[1~-~CUE_{0}~-~\omega~(T~-~273.15)]$
+  [16] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{\Re~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{\Re~\times~T}}~+~DOC}$
   
-  Symbols used in equations are explained in Supplemntary Table 1.
+  [17] $R_{SOIL}~=~C_{S}~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{\Re~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{\Re~\times~T}}~+~C_{S}}~\times~[1~-~CUE_{0}~-~\omega~(T~-~273.15)]$
+  
+  [18] $R_{SOIL}~=~DOC~\times~C_{MB}~\times~V^{0}_{MAX}~\times~e^{\frac{E_{A-V_{MAX}}}{\Re~\times~T}}~\times~\frac{1}{K^{0}_{M}~\times~e^{\frac{E_{A-K_{M}}}{\Re~\times~T}}~+~DOC}~\times~[1~-~CUE_{0}~-~\omega~(T~-~273.15)]$
+  
+  [19] $R_{SOIL}~=~C_{S}~\times~\frac{k_{B}~\times~T}{h}~e^{-\frac{\Delta~H^{\ddagger}_{T_{0}}~+~\Delta~C^{\ddagger}_{P}~\times~(T~-~T_{0})}{\Re~\times~T}~+~\frac{\Delta~S^{\ddagger}_{T_{0}}~+~\Delta~C^{\ddagger}_{P}~\times~[ln(T)~-~ln(T_{0})]}{\Re}}$
+  
+
+  
+Symbols used in equations are explained in Supplemntary Table 1.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+
 source("./Global_Eqs/ctot_global.R")
 eq1<-ctot_global(dat)
 source("./Global_Eqs/cmic_global.R")
@@ -1447,58 +1447,91 @@ source("./Global_Eqs/simple_global.R")
 eq3<-simple_global(dat)
 source("./Global_Eqs/monod_global1.R")
 eq4<-monod_global1(dat)
+eq4b<-monod_global1(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/monod_global2.R")
 eq5<-monod_global2(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/monod2_global.R")
-eq6<-monod2_global(dat[!is.na(dat$CNs), ])
+eq6<-monod2_global(dat)
+eq6b<-monod2_global(dat[!is.na(dat$DOC), ])
+source("./Global_Eqs/monod2_global_DOC.R")
+eq7<-monod2_global(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/nic_global.R")
-eq7<-nic_global(dat)
+eq8<-nic_global(dat)
 source("./Global_Eqs/first_global.R")
-eq8<-first_global(dat)
+eq9<-first_global(dat)
+eq9b<-first_global(dat[!is.na(dat$DOC), ])
+source("./Global_Eqs/first_global_DOC.R")
+eq10<-first_global_DOC(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/coupled_global.R")
-eq9<-coupled_global(dat)
+eq11<-coupled_global(dat)
+eq11b<-coupled_global(dat[!is.na(dat$DOC), ])
+source("./Global_Eqs/coupled_global_DOC.R")
+eq12<-coupled_global_DOC(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/monod_Vmax.R")
-eq10<-monod_Vmax(dat)
+eq13<-monod_Vmax(dat)
+eq13b<-monod_Vmax(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/monod_Vmax2.R")
-eq11<-monod_Vmax2(dat[!is.na(dat$DOC), ])
+eq14<-monod_Vmax2(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/monod_VmaxKm.R")
-eq12<-monod_VmaxKm(dat)
+eq15<-monod_VmaxKm(dat)
+eq15b<-monod_VmaxKm(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/monod_VmaxKm2.R")
-eq13<-monod_VmaxKm2(dat[!is.na(dat$DOC), ])
+eq16<-monod_VmaxKm2(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/monod_VmaxKmCUE.R")
-eq14<-monod_VmaxKmCUE(dat)
+eq17<-monod_VmaxKmCUE(dat)
+eq17b<-monod_VmaxKmCUE(dat[!is.na(dat$DOC), ])
 source("./Global_Eqs/monod_VmaxKmCUE2.R")
-eq15<-monod_VmaxKmCUE2(dat[!is.na(dat$DOC), ])
+eq18<-monod_VmaxKmCUE2(dat[!is.na(dat$DOC), ])
+source("./Global_Eqs/MMR_global16.R")
+eq19<-MMR_global16(dat)
+
+
 
 t.a4<-data.frame(AIC=c(eq1[["AIC"]], eq2[["AIC"]],eq3[["AIC"]],
                        eq4[["AIC"]],eq5[["AIC"]],eq6[["AIC"]],
                        eq7[["AIC"]],eq8[["AIC"]],eq9[["AIC"]],
                        eq10[["AIC"]],eq11[["AIC"]],eq12[["AIC"]],
-                       eq13[["AIC"]],eq14[["AIC"]],eq15[["AIC"]]),
+                       eq13[["AIC"]],eq14[["AIC"]],eq15[["AIC"]],
+                       eq16[["AIC"]], eq17[["AIC"]], eq18[["AIC"]], eq19[["AIC"]]),
                  R2=c(eq1[["R2"]], eq2[["R2"]],eq3[["R2"]],
                       eq4[["R2"]],eq5[["R2"]],eq6[["R2"]],
                       eq7[["R2"]],eq8[["R2"]],eq9[["R2"]],
                       eq10[["R2"]],eq11[["R2"]],eq12[["R2"]],
-                      eq13[["R2"]],eq14[["R2"]],eq15[["R2"]]),
-                 dAIC=c(eq1[["AIC"]]-eq7[["AIC"]], eq2[["AIC"]]-eq7[["AIC"]],eq3[["AIC"]]-eq7[["AIC"]],
-                        eq4[["AIC"]]-eq7[["AIC"]],NA,NA,
-                        eq7[["AIC"]]-eq7[["AIC"]],eq8[["AIC"]]-eq7[["AIC"]],eq9[["AIC"]]-eq7[["AIC"]],
-                        eq10[["AIC"]]-eq7[["AIC"]],NA,eq12[["AIC"]]-eq7[["AIC"]],
-                        NA,eq14[["AIC"]]-eq7[["AIC"]],NA))
+                      eq13[["R2"]],eq14[["R2"]],eq15[["R2"]],
+                      eq16[["R2"]], eq17[["R2"]], eq18[["R2"]], eq19[["R2"]]),
+                 dAIC=c(eq1[["AIC"]]-eq8[["AIC"]],
+                        eq2[["AIC"]]-eq8[["AIC"]],
+                        eq3[["AIC"]]-eq8[["AIC"]],
+                        eq4[["AIC"]]-eq8[["AIC"]],
+                        eq5[["AIC"]]-eq4b[["AIC"]],
+                        eq6[["AIC"]]-eq8[["AIC"]],
+                        eq7[["AIC"]]-eq6b[["AIC"]],
+                        NA,
+                        eq9[["AIC"]]-eq8[["AIC"]],
+                        eq10[["AIC"]]-eq9b[["AIC"]],
+                        eq11[["AIC"]]-eq8[["AIC"]],
+                        eq12[["AIC"]]-eq11b[["AIC"]],
+                        eq13[["AIC"]]-eq8[["AIC"]],
+                        eq14[["AIC"]]-eq13b[["AIC"]],
+                        eq15[["AIC"]]-eq8[["AIC"]],
+                        eq16[["AIC"]]-eq15b[["AIC"]],
+                        eq17[["AIC"]]-eq8[["AIC"]],
+                        eq18[["AIC"]]-eq17b[["AIC"]],
+                        eq19[["AIC"]]-eq8[["AIC"]]))
 
 options(knitr.kable.NA = '')
-rownames(t.a3)<-c("First order decay", "Multiplicative")
 
 
-kable(t.a4, digits = c(0,2,0), align = 'c', "html", booktabs=T, col.names = c('AIC', '$\\R^{2}$', '$\\Delta~AIC$'), row.names=T, caption = "Table S4: Goodness of fit of 15 different equations. Goodness of fit is expressed as Akaike Information Criterion (AIC) and coefficient of determination ($R^{2}$). The difference between AIC of the simplest equation 7 and other equations are reported. Rows with red background represents equations including dissolved organic carbon (DOC) or total organic carbon to nitrogen ratio as an explanatory variable. Because both variables were not reported in all studies, respective equations were fitted on the subset of the data and thus, the AIC is lower and cannot be directly compared with equation 7.") %>% 
+
+kable(t.a4, digits = c(0,2,0), align = 'c', "html", booktabs=T, col.names = c('AIC', '$\\R^{2}$', '$\\Delta~AIC$'), row.names=T, caption = "Table S4: Goodness of fit of 15 different equations. Goodness of fit is expressed as Akaike Information Criterion (AIC) and coefficient of determination ($R^{2}$). The difference between AIC of the simplest equation 8 and other equations are reported. Rows with red background represents equations including dissolved organic carbon (DOC). Because DOC was not reported in all studies, respective equations were fitted on the subset of the data and thus, the AIC is not compared with equation 7. Instead, the AIC is compared with the AIC calculated for the same equation fitted on the same subset of data but substituting total soil organic carbon for DOC.") %>% 
   kable_styling(bootstrap_options = c("hover")) %>%
-  row_spec(c(5,6,11,13,15), bold = T, color = "white", background = "#D7261E")
+  row_spec(c(5,7,10,12,14, 16), bold = T, color = "white", background = "#D7261E")
 
 
 ```
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Correlation matrix of all variables extracted from original studies (CNs - total organic carbon to nitrogen ratio, Rsoil - heterotrophic soil respiration rate, Ctot - total soil organic carbon, DOC - dissolved organic carbon, WHC - water holding capacity). "}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S8: Correlation matrix of all variables extracted from original studies (CNs - total organic carbon to nitrogen ratio, Rsoil - heterotrophic soil respiration rate, Ctot - total soil organic carbon, DOC - dissolved organic carbon, WHC - water holding capacity). "}
 cor1<-dat[,c(2,4,6, 7, 9, 11, 13, 16, 22)]
 cor1[,c(4, 5, 6, 7)]<-log(cor1[,c(4, 5, 6, 7)])
 chart.Correlation(cor1, histogram = T, pch=19)
@@ -1506,7 +1539,7 @@ chart.Correlation(cor1, histogram = T, pch=19)
 ```
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="The difference between the $E_{A}$ parameters estimated for first order decay and multiplicative equation ($\\Delta~E_{A}$) as explained by the temperature sensitivity of microbial biomass ($E_{A-Biomass}$. Grey solid line represents 1:1 relationship. Different colours denote three different categories of microbial biomass response to temperature (Increasing, Decreasing and Constant). )"}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S9: The difference between the $E_{A}$ parameters estimated for first order decay and multiplicative equation ($\\Delta~E_{A}$) as explained by the temperature sensitivity of microbial biomass ($E_{A-Biomass}$. Grey solid line represents 1:1 relationship. Different colours denote three different categories of microbial biomass response to temperature (Increasing, Decreasing and Constant). )"}
 
 ggplot(dat.results2, aes(Ea.mic/1000, (Eas-Easb)/1000))+geom_point(size=6, shape=21, aes(fill=Category))+
   geom_hline(yintercept = 0)+geom_vline(xintercept = 0)+theme_bw()+xlim(-100, 200)+ylim(-100, 200)+
@@ -1536,10 +1569,131 @@ ggplot(dat.results2, aes(Ea.mic/1000, (Eas-Easb)/1000))+geom_point(size=6, shape
 ```
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Correlation between the activation energy parameter of the first order decay (Eas) or multiplicative equation (Easb) and selected soil variables (CNs - total organic carbon to nitrogen ratio, Ctot - total soil organic carbon, DOC - dissolved organic carbon, WHC - water holding capacity, Ea.mic - temperature sensitivity of microbial biomass). "}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S10: Correlation between the activation energy parameter of the first order decay (Eas) or multiplicative equation (Easb) and selected soil variables (CNs - total organic carbon to nitrogen ratio, Ctot - total soil organic carbon, DOC - dissolved organic carbon, WHC - water holding capacity, Ea.mic - temperature sensitivity of microbial biomass). "}
 
 cor2<-dat.results2[,c(25, 32, 4, 6, 9, 11, 13, 16, 22, 39)]
 chart.Correlation(cor2, histogram = T, pch=19)
 
 
 ```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Fig. S11: Dissolved organic carbon (DOC; blue points, left y-axis) and the microbial biomass (grey points, right y-axis) as a function of the temperature in four different soils (Santruckova et al., 2003)."}
+fig31d<-ggplot(dat31, aes(x=Temperature-273.15))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=DOC, fill="DOC"))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass, fill="Biomass"))+
+    scale_y_continuous(sec.axis = sec_axis(~., 
+                       name = c(" ")))+
+    scale_colour_manual(values = c("grey60", "dodgerblue3"))+
+    scale_fill_manual(values = c("grey60", "dodgerblue3"))+
+    xlim(5,42)+
+    labs(y = expression(paste("DOC (", mu,"mol ",g^{-1}, ")")),
+         x = "Temperature (°C)",
+         colour = "Legend")+
+    theme_bw()+
+    theme(axis.line.x = element_blank(),
+          axis.line.y =element_blank(),
+          plot.background=element_blank(),
+          axis.title.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.text.x = element_blank(),
+          axis.text = element_text(size=10,colour="black"),
+          legend.text=element_text(size=10,colour="black"),
+          legend.title=element_blank(),
+          legend.justification=c(0,1), legend.position=c(0.01,0.99),
+          legend.key.size = unit(1,'lines'),
+          legend.background=element_rect(fill=NA, colour=NA),
+          strip.text.x = element_text(size=10),
+          strip.background = element_rect(colour="black", fill = "white"),
+          plot.margin = unit(c(0.1, 0.08, 0,0.1), "in"))+facet_wrap(~label)
+
+fig32d<-ggplot(dat32, aes(x=Temperature-273.15))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=DOC, fill="DOC"))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass/2, fill="Biomass"))+
+    scale_y_continuous(sec.axis = sec_axis(~.*2, 
+                       name = c(" ")))+
+    scale_colour_manual(values = c("grey60", "dodgerblue3"))+
+    scale_fill_manual(values = c("grey60", "dodgerblue3"))+
+    xlim(5,42)+
+    labs(y = expression(paste("DOC (", mu,"mol ",g^{-1}, ")")),
+         x = "Temperature (°C)",
+         colour = "Legend")+
+    theme_bw()+
+    theme(axis.line.x = element_blank(),
+          axis.line.y =element_blank(),
+          plot.background=element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.text = element_text(size=10,colour="black"),
+          legend.text=element_text(size=10,colour="black"),
+          legend.title=element_blank(),
+          legend.justification=c(0,1), legend.position="none",
+          legend.key.size = unit(1,'lines'),
+          legend.background=element_rect(fill=NA, colour=NA),
+          strip.text.x = element_text(size=10),
+          strip.background = element_rect(colour="black", fill = "white"),
+          plot.margin = unit(c(0, 0, 0.1,0.1), "in"))+facet_wrap(~label)
+
+fig33d<-ggplot(dat33, aes(x=Temperature-273.15))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=DOC, fill="DOC"))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass/5, fill="Biomass"))+
+    scale_y_continuous(sec.axis = sec_axis(~.*5, 
+                       name = expression(paste("Biomass (", mu, "mol ",g^{-1}, ")"))))+
+    scale_colour_manual(values = c("grey60", "dodgerblue3"))+
+    scale_fill_manual(values = c("grey60", "dodgerblue3"))+
+    xlim(5,42)+
+    labs(y = (" "),
+         x = "Temperature (°C)",
+         colour = "Legend")+
+    theme_bw()+
+    theme(axis.line.x = element_blank(),
+          axis.line.y =element_blank(),
+          axis.title.x = element_blank(),
+          plot.background=element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.text = element_text(size=10,colour="black"),
+          legend.text=element_text(size=10,colour="black"),
+          legend.title=element_blank(),
+          legend.justification=c(0,1), legend.position="none",
+          legend.key.size = unit(1,'lines'),
+          legend.background=element_rect(fill=NA, colour=NA),
+          strip.text.x = element_text(size=10),
+          strip.background = element_rect(colour="black", fill = "white"),
+          plot.margin = unit(c(0.1, 0.18, 0,0), "in"))+facet_wrap(~label)
+
+fig34d<-ggplot(dat34, aes(x=Temperature-273.15))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=DOC, fill="DOC"))+
+    geom_point(size=2,shape=21, alpha=0.5, aes(y=Biomass/5, fill="Biomass"))+
+    scale_y_continuous(sec.axis = sec_axis(~.*5, 
+                                           name = expression(paste("Biomass (", mu, "mol ",g^{-1}, ")"))))+
+    scale_colour_manual(values = c("grey60", "dodgerblue3"))+
+    scale_fill_manual(values = c("grey60", "dodgerblue3"))+
+    xlim(5,42)+
+    labs(y = (" "),
+         x = "Temperature (°C)",
+         colour = "Legend")+
+    theme_bw()+
+    theme(axis.line.x = element_blank(),
+          axis.line.y =element_blank(),
+          plot.background=element_blank(),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.text = element_text(size=10,colour="black"),
+          legend.text=element_text(size=10,colour="black"),
+          legend.title=element_blank(),
+          legend.justification=c(0,1), legend.position="none",
+          legend.key.size = unit(1,'lines'),
+          legend.background=element_rect(fill=NA, colour=NA),
+          strip.text.x = element_text(size=10),
+          strip.background = element_rect(colour="black", fill = "white"),
+          plot.margin = unit(c(0, 0.1, 0.1,0), "in"))+facet_wrap(~label)
+
+#6 to 8 inches when exported to pdf
+grid.arrange(fig31d, fig33d, fig32d, fig34d, ncol=2)
+```
+

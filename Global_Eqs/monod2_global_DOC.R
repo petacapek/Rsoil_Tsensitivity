@@ -1,4 +1,4 @@
-monod_global2<-function(data){
+monod_global2_DOC<-function(data){
 
   #creating function for parameters estimation
   estim<-function(fr){
@@ -6,7 +6,7 @@ monod_global2<-function(data){
     est<-function(x){
 
       Cmic<-as.numeric(fr[, "Biomass"])
-      Ctot<-as.numeric(fr[, "Ctot"])
+      Ctot<-as.numeric(fr[, "DOC"])
 
       Temp<-as.numeric(fr[, "Temperature"])
 
@@ -27,7 +27,7 @@ monod_global2<-function(data){
     goodness<-function(x){
 
       Cmic<-as.numeric(fr[, "Biomass"])
-      Ctot<-as.numeric(fr[, "Ctot"])
+      Ctot<-as.numeric(fr[, "DOC"])
       Temp<-as.numeric(fr[, "Temperature"])
 
       yhat<-x[1]*Ctot*Cmic/(x[2]+Ctot)
