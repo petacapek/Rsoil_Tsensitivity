@@ -1,5 +1,5 @@
 ---
-title: "Temperature associated changes of microbial biomass affect the apparent temperature sensitivity of soil respiration"
+title: "Apparent temperature sensitivity of soil respiration can result from temperature driven changes in microbial biomass"
 author: "Petr Capek, Robert Starke, Kirsten Hofmockel, Ben Bond-Lamberty, Nancy Hess"
 date: "`r Sys.Date()`"
 output:
